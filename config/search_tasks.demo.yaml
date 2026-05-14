@@ -1,0 +1,10 @@
+tasks:
+  - id: demo_two_keywords_live
+    category: campaigns
+    subcategory: product_launch
+    keywords:
+      - "4k advertisement"
+      - "commercial director's cut trailer"
+    max_results_per_keyword: 3
+    region_code: US
+    relevance_language: en

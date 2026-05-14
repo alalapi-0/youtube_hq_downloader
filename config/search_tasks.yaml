@@ -1,0 +1,11 @@
+tasks:
+  - id: default_campaigns
+    category: campaigns
+    subcategory: product
+    keywords:
+      - "4k advertisement"
+      - "premium brand commercial cinematic"
+      - "product launch teaser 2160p"
+    max_results_per_keyword: 10
+    region_code: US
+    relevance_language: en

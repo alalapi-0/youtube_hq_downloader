@@ -1,0 +1,26 @@
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# IDE / OS
+.idea/
+.DS_Store
+
+# Downloads / caches from legacy tooling
+downloads/
+state/
+
+# Generated pipeline intermediates / exports (fixtures under data/fixtures kept)
+/data/raw/*.jsonl
+/data/enriched/*.jsonl
+/data/filtered/*.jsonl
+/data/rejected/*.jsonl
+
+/output/csv/*.csv
+/output/jsonl/*.jsonl
+/output/markdown/*.md

@@ -1,0 +1,32 @@
+negative_keyword_sources:
+  negative_keywords_file: config/negative_keywords.yaml
+
+brand_positive_keywords_file: config/brand_whitelist.yaml
+
+duration:
+  min_seconds: 45
+  max_seconds: 7200
+
+shorts:
+  exclude: true
+
+live:
+  exclude: true
+
+ai_content:
+  reject_on_keyword_hit: true
+
+low_value_content:
+  reject_on_keyword_hit: true
+
+resolution:
+  require_4k: false
+  allow_text_evidence_when_format_unknown: true
+  allow_format_probe: true
+
+dedupe:
+  by_video_id: true
+  category_scope_field: category_subcategory
+  max_per_channel: 1
+  channel_whitelist_file: config/channel_whitelist.yaml
+  whitelist_max_per_channel: 3

@@ -1,0 +1,9 @@
+google-api-python-client
+python-dotenv
+PyYAML
+pandas
+tqdm
+isodate
+
+# Optional: required only for probe-format yt-dlp resolution checks
+yt-dlp
