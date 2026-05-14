@@ -15,7 +15,10 @@ __pycache__/
 downloads/
 state/
 
-# Generated pipeline intermediates / exports (fixtures under data/fixtures kept)
+# LLM / pipeline cache (keep directory via .gitkeep)
+cache/*.json
+
+# Generated pipeline intermediates / exports (fixtures + examples committed separately)
 /data/raw/*.jsonl
 /data/enriched/*.jsonl
 /data/filtered/*.jsonl
@@ -24,3 +27,4 @@ state/
 /output/csv/*.csv
 /output/jsonl/*.jsonl
 /output/markdown/*.md
+/output/search_plan.yaml

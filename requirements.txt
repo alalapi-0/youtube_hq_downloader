@@ -5,5 +5,8 @@ pandas
 tqdm
 isodate
 
-# Optional: required only for probe-format yt-dlp resolution checks
+# Optional: explicit HTTP for LLM client (fallback uses stdlib urllib)
+requests
+
+# Optional: probe-format / available_format_heights via yt-dlp metadata
 yt-dlp

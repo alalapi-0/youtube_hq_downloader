@@ -1,15 +1,22 @@
-## [2.0.0] - 2026-05-14
-
-### 重大变更（Breaking）
-
-- 项目目标从「多平台 HQ 视频下载工具」重写为「YouTube **候选链接批量采集 → 元数据增强 → （可选）格式探测 → 规则过滤 → 多格式导出**」链路；**本迭代不包含任何二进制视频下载**。旧代码整体移至 `legacy/old_downloader/`（详见 `docs/cleanup_report.md`）。
+## [2.1.0] - 2026-05-14
 
 ### Added
 
-- `src/` 下的 CLI：`search` / `enrich` / `probe-format` / `filter` / `export`。  
-- YAML 配置文件：`search_tasks`、`filter_rules`、`negative_keywords`、`brand_whitelist`、`channel_whitelist`。  
-- 标准化的 jsonl Candidate schema 与 Markdown/CSV/jsonl exporter（含 QA 计数头）。  
+- `plan`/`llm-filter`/`strategy-optimize` 子命令与完整 `skills/`、`config/llm_*.yaml`。
+- LLM 客户端 + `cache/` 指纹缓存（不入库）。
+- `search_plan` 嵌套结构、`brands` 扩展检索词、候选 schema 扩展（`brand`、`description_snippet`、`live_broadcast_content`、`available_format_heights`、`llm_*`、`likely_*`、`visual_quality_risk`、`manual_review_priority`、`error` 等）。
+- `examples/` 与 `unittest` 离线冒烟。
 
-### Operational
+### Changed
 
-- 通过 `.env` + `python-dotenv` 提供 `YOUTUBE_API_KEY`；无 Key 时 `enrich` 将直通告警而不中断后续演示。
+- `filter`/`export`/`probe-format` 升级：高风险视觉打标、`unavailable` 探测状态、导出统计头与直方刷新。
+
+## [2.0.0] - 2026-05-14
+
+### Breaking
+
+- 项目目标重写为候选链接管线；不包含视频下载。
+
+### Added
+
+- 基础 CLI、`config/*.yaml`、`src/` exporters、legacy 归档。

@@ -9,10 +9,14 @@ from dotenv import load_dotenv
 
 from .utils import (
     PROJECT_ROOT,
+    append_error,
     blank_candidate,
     detect_text_4k_evidence,
     extract_video_id,
+    flatten_brand_names,
+    load_yaml_mapping,
     merge_candidates,
+    sniff_description,
     watch_url,
 )
 
@@ -28,9 +32,20 @@ def chunks(seq: List[str], n: int) -> Iterable[List[str]]:
         yield seq[i : i + n]
 
 
+def _detect_brand(title: str, description: str, brand_names: List[str]) -> str:
+    hay = f"{title or ''}\n{description or ''}".lower()
+    for name in brand_names:
+        if name.lower() in hay:
+            return name
+    return ""
+
+
 def enrich_records(records: List[Dict[str, Any]], api_key: str) -> List[Dict[str, Any]]:
     from googleapiclient.discovery import build
     from tqdm import tqdm
+
+    brand_cfg = load_yaml_mapping(PROJECT_ROOT / "config" / "brand_whitelist.yaml")
+    brand_names = flatten_brand_names(brand_cfg)
 
     youtube = build("youtube", "v3", developerKey=api_key)
     indexed = [(i, dict(r)) for i, r in enumerate(records)]
@@ -63,7 +78,7 @@ def enrich_records(records: List[Dict[str, Any]], api_key: str) -> List[Dict[str
             details[vid] = it
 
     out: List[Dict[str, Any]] = []
-    for orig_i, row in sorted(indexed, key=lambda x: x[0]):
+    for _, row in sorted(indexed, key=lambda x: x[0]):
         vid = row.get("video_id") or extract_video_id(row.get("canonical_url") or "")
         vid = str(vid or "")
         if not vid:
@@ -75,6 +90,10 @@ def enrich_records(records: List[Dict[str, Any]], api_key: str) -> List[Dict[str
             text_ok, td = detect_text_4k_evidence(base["title"], base["description"])
             base["resolution_text_evidence_4k"] = text_ok
             base["resolution_text_evidence_detail"] = td
+            base["description_snippet"] = sniff_description(base.get("description") or "")
+            base.setdefault("live_broadcast_content", "none")
+            base["brand"] = base.get("brand") or _detect_brand(base["title"], base["description"], brand_names)
+            append_error(base, "videos.list:missing_item")
             out.append(base)
             continue
 
@@ -100,6 +119,7 @@ def enrich_records(records: List[Dict[str, Any]], api_key: str) -> List[Dict[str
             {
                 "title": title,
                 "description": desc,
+                "description_snippet": sniff_description(desc),
                 "channel_id": sn.get("channelId") or "",
                 "channel_title": sn.get("channelTitle") or "",
                 "published_at": sn.get("publishedAt") or "",
@@ -108,20 +128,33 @@ def enrich_records(records: List[Dict[str, Any]], api_key: str) -> List[Dict[str
                 "duration_seconds": duration_sec,
                 "definition": cd.get("definition") or "",
                 "caption_available": cd.get("caption") == "true",
-                "is_live": str(live) != "none" or ("liveStreamingDetails" in it and it["liveStreamingDetails"]),
-                "view_count": int(st["viewCount"]) if st.get("viewCount") and str(st["viewCount"]).isdigit() else None,
-                "like_count": int(st["likeCount"]) if st.get("likeCount") and str(st["likeCount"]).isdigit() else None,
+                "is_live": str(live) != "none"
+                or (
+                    isinstance(it.get("liveStreamingDetails"), dict) and bool(it.get("liveStreamingDetails"))
+                ),
+                "live_broadcast_content": str(live),
+                "view_count": int(st["viewCount"])
+                if st.get("viewCount") and str(st["viewCount"]).isdigit()
+                else None,
+                "like_count": int(st["likeCount"])
+                if st.get("likeCount") and str(st["likeCount"]).isdigit()
+                else None,
                 "comment_count": int(st["commentCount"])
                 if st.get("commentCount") and str(st["commentCount"]).isdigit()
                 else None,
                 "thumbnail_best_url": base.get("thumbnail_best_url") or (best_thumb.get("url") or ""),
                 "canonical_url": watch_url(vid),
+                "brand": base.get("brand") or _detect_brand(title, desc, brand_names),
             },
         )
 
         canon = merged.get("canonical_url") or ""
         merged["is_shorts_candidate"] = bool(
-            (duration_sec is not None and duration_sec <= 180 and ("shorts" in canon.lower() or "#shorts" in desc.lower()))
+            (
+                duration_sec is not None
+                and duration_sec <= 180
+                and ("shorts" in canon.lower() or "#shorts" in desc.lower())
+            )
             or "/shorts/" in canon.lower()
             or merged.get("is_shorts_candidate")
         )

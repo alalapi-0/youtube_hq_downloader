@@ -4,7 +4,7 @@ import json
 import re
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -65,6 +65,58 @@ def watch_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
 
 
+def append_error(row: Dict[str, Any], message: str) -> None:
+    msg = (message or "").strip()
+    if not msg:
+        return
+    prev = str(row.get("error") or "").strip()
+    if prev:
+        if msg in prev:
+            return
+        row["error"] = f"{prev}; {msg}"
+    else:
+        row["error"] = msg
+
+
+def flatten_brand_names(brand_cfg: Dict[str, Any]) -> List[str]:
+    names: List[str] = []
+    for k, v in (brand_cfg or {}).items():
+        if k in ("positive_keywords",):
+            continue
+        if isinstance(v, dict) and "brand_names" in v:
+            names.extend(str(x).strip() for x in (v.get("brand_names") or []) if str(x).strip())
+        elif k == "brand_names" and isinstance(v, list):
+            names.extend(str(x).strip() for x in v if str(x).strip())
+    # legacy flat list
+    for x in brand_cfg.get("brand_names") or []:
+        s = str(x).strip()
+        if s:
+            names.append(s)
+    # de-dupe case-insensitive, preserve order
+    seen: set[str] = set()
+    out: List[str] = []
+    for n in names:
+        low = n.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        out.append(n)
+    return out
+
+
+def sniff_description(description: str, limit: int = 240) -> str:
+    t = " ".join((description or "").split())
+    if len(t) <= limit:
+        return t
+    return t[:limit] + "…"
+
+
+def coerce_candidate(row: Dict[str, Any]) -> Dict[str, Any]:
+    base = blank_candidate()
+    base.update(row or {})
+    return base
+
+
 def blank_candidate(**overrides: Any) -> Dict[str, Any]:
     row: Dict[str, Any] = {
         "source_platform": "youtube",
@@ -72,11 +124,13 @@ def blank_candidate(**overrides: Any) -> Dict[str, Any]:
         "canonical_url": "",
         "title": "",
         "description": "",
+        "description_snippet": "",
         "channel_id": "",
         "channel_title": "",
         "published_at": "",
         "category": "",
         "subcategory": "",
+        "brand": "",
         "search_task_id": "",
         "matched_keywords": [],
         "region_code": "",
@@ -87,6 +141,7 @@ def blank_candidate(**overrides: Any) -> Dict[str, Any]:
         "caption_available": False,
         "is_live": False,
         "is_shorts_candidate": False,
+        "live_broadcast_content": "none",
         "view_count": None,
         "like_count": None,
         "comment_count": None,
@@ -95,6 +150,7 @@ def blank_candidate(**overrides: Any) -> Dict[str, Any]:
         "format_probe_status": "pending",
         "probe_confirmed_4k": False,
         "probe_max_height": None,
+        "available_format_heights": [],
         "resolution_text_evidence_4k": False,
         "resolution_text_evidence_detail": "",
         "needs_resolution_check": False,
@@ -104,8 +160,25 @@ def blank_candidate(**overrides: Any) -> Dict[str, Any]:
         "hard_filter_pass": None,
         "rejection_codes": [],
         "rejection_reason": "",
+        "rejection_stage": "",
+        "rejection_payload": {},
         "dedupe_channel_rank_in_scope": None,
         "manual_review_status": "pending",
+        "manual_review_priority": "medium",
+        "visual_quality_risk": "low",
+        "likely_ai_generated": False,
+        "likely_low_value_noise": False,
+        "likely_premium_ad": False,
+        "likely_ugc_high_motion": False,
+        "likely_static_product_visual": False,
+        # LLM-layer fields (baseline defaults; downstream may overwrite)
+        "llm_status": "pending",
+        "llm_provider": "",
+        "llm_model": "",
+        "llm_relevant": None,
+        "llm_brand_fit": None,
+        "llm_notes": "",
+        "error": "",
     }
     row.update(overrides)
     return row

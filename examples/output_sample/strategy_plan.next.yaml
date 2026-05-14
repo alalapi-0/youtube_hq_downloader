@@ -1,0 +1,30 @@
+project:
+  name: demo_offline_plan
+global_rules:
+  max_results_per_keyword: 3
+  default_region_code: US
+  default_relevance_language: en
+duration:
+  min_seconds: 45
+  max_seconds: 7200
+resolution:
+  require_4k: false
+  min_height: null
+  allow_text_evidence_when_format_unknown: true
+  allow_format_probe: true
+positive_negative_keywords:
+  negative_keywords_file: config/negative_keywords.yaml
+  brand_positive_keywords_file: config/brand_whitelist.yaml
+  embedded_hint: []
+tasks:
+- id: demo_task
+  category: campaigns
+  subcategory: product
+  keywords:
+  - luxury handbag commercial
+  - premium watch cinematic ad
+  brands: []
+  preferred_channels: []
+  max_results_per_keyword: 3
+  region_code: US
+  relevance_language: en

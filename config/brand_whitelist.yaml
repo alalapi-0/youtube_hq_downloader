@@ -1,8 +1,27 @@
-brand_names:
-  - sony
-  - apple
+# 品类 → 正向品牌锚点；也会在 `candidate.brand` 字段做弱匹配回填
+luxury_fashion:
+  brand_names:
+    - Gucci
+    - Louis Vuitton
+    - Chanel
+    - Hermès
+    - Dior
+    - Prada
+    - Burberry
+    - Balenciaga
+    - Valentino
+    - Saint Laurent
+
+legacy_positive_brands:
+  brand_names:
+    - Sony
+    - Apple
 
 positive_keywords:
   - cinematic
   - flagship
   - commercial grade
+  - runway
+  - editorial
+  - campaign film
+  - color grading

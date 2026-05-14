@@ -1,3 +1,6 @@
+# 扁平检索任务清单；`plan` 会据此生成完整 `output/search_plan.yaml` 嵌套结构
+project:
+  name: youtube_url_sourcing
 tasks:
   - id: default_campaigns
     category: campaigns
@@ -6,6 +9,10 @@ tasks:
       - "4k advertisement"
       - "premium brand commercial cinematic"
       - "product launch teaser 2160p"
+    brands:
+      - "Gucci"
+      - "Louis Vuitton"
+    preferred_channels: []
     max_results_per_keyword: 10
     region_code: US
     relevance_language: en

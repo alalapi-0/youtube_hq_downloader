@@ -19,8 +19,14 @@ ai_content:
 low_value_content:
   reject_on_keyword_hit: true
 
+# 高风险视觉口径：命中后打标并可抬升人工复核优先级；默认不因单独命中硬拒绝
+high_risk_visual:
+  tag_only: true
+  escalate_manual_review_priority: true
+
 resolution:
   require_4k: false
+  min_height: null
   allow_text_evidence_when_format_unknown: true
   allow_format_probe: true
 
@@ -30,3 +36,25 @@ dedupe:
   max_per_channel: 1
   channel_whitelist_file: config/channel_whitelist.yaml
   whitelist_max_per_channel: 3
+
+# 打分与排序（软信号；与硬阈值分离）
+ranking:
+  penalize_high_motion_content: true
+  prefer_static_product_visuals: true
+  high_motion_tokens:
+    - " pov "
+    - "parkour"
+    - "gaming highlights"
+    - "fast paced"
+    - "montage"
+    - "hyperlapse"
+  static_product_tokens:
+    - "studio lighting"
+    - "macro"
+    - "slow pan"
+    - "still life"
+    - "beauty shot"
+
+manual_review:
+  default_priority: medium
+  prefer_text_only_4k_claims: true

@@ -1,22 +1,48 @@
-## 归档与迁移计划（在执行移动前复核）
+## 归档与迁移计划（A / B / C）
 
-以下为与「批量候选 URL sourcing + 元数据 + 规则过滤」新目标不符或已冗余内容的处理方案。**执行移动前请先审阅**，避免误以为文件被凭空删除。
+在执行任何 **删除/大规模搬迁** 前，先按下面分级处理；**不确定是否仍需要的文件 → 一律挪到 `legacy/`** 而不是直接删除。
 
-### 计划迁移到 `legacy/old_downloader/`
+| 等级 | 含义 | 动作 |
+|------|------|------|
+| **A** | 与当前「LLM 增强的候选 URL sourcing 管线」直接相关 | 保留在仓库根目录与 `src/`、`config/`、`docs/`、`skills/` |
+| **B** | 明确属于旧「多平台 HQ 下载」或其它已废弃目标 | 保留在 `legacy/old_downloader/`（只读参考） |
+| **C** | 用途不明 / 可能仍有个别引用 / 需人工二次确认 | **移动到 `legacy/` 子目录**（附 README 说明来源日期），不在主路径引用 |
+
+### A — 保留（当前产品路径）
+
+- `src/`：CLI、`youtube_search`、`metadata_enrich`、`format_probe`、`filters`、`scorer`、`exporters`、LLM 模块与缓存。
+- `config/*.yaml`：`search_tasks`、`filter_rules`、`negative_keywords`（含 `high_risk`）、`brand_whitelist`、`channel_whitelist`、`llm_config`、`llm_prompts`。
+- `docs/`、`skills/`、`examples/`、`data/**/.gitkeep`、`cache/.gitkeep`。
+- `README.md`、`CHANGELOG.md`、`.env.example`、`requirements.txt`。
+
+### B — 已归档（旧下载链路）
 
 | 路径 | 原因 |
 |------|------|
-| `run.py` | 旧的一键 yt-dlp 探测+下载编排入口；本迭代明确 **不下载视频** |
-| `scripts/` | 原多平台下载与 plan-cache 套件，已由 `src/` 中的 Data API / 过滤器替代 |
-| `urls.txt` | 旧的手工队列输入；新项目由 `search_tasks.yaml`→jsonl 驱动 |
-| `requirements-browser.txt` | Playwright/浏览器抓取 token 的附加依赖清单，不再需要 |
-| `docs/cache_mechanism_implementation.md` | Plan cache（下载链路）文档，已由新工作流废弃 |
-| `docs/download_by_plan_guide.md` | 下载链路操作指南，已由 `docs/workflow.md` 取代 |
+| `legacy/old_downloader/run.py` | 旧的一键 yt-dlp 探测+下载编排；本仓库 **不下载视频** |
+| `legacy/old_downloader/scripts/` | 多平台下载与 plan-cache |
+| `legacy/old_downloader/urls.txt` | 手工队列 |
+| `legacy/old_downloader/requirements-browser.txt` | 浏览器抓取依赖 |
+| `legacy/old_downloader/docs_archive/*` | 下载链路文档 |
+
+### C — 不确定时的默认策略
+
+- 任何无法确认是否仍被外部脚本引用的根目录杂项、一次性 notebook、旧配置副本：**先复制或移动到 `legacy/misc_<date>/`**，并在该目录放简短 `README.md` 说明由来。
+- **本迭代未再发现需 C 级搬迁的根目录文件**；若后续出现，按上表执行。
+
+---
+
+## 历史：计划迁移到 `legacy/old_downloader/`（已完成）
+
+| 路径 | 原因 |
+|------|------|
+| `run.py` | 旧入口 |
+| `scripts/` | 原多平台下载套件 |
+| `urls.txt` | 旧输入 |
+| `requirements-browser.txt` | 附加依赖 |
+| `docs/cache_mechanism_implementation.md` | Plan cache 文档 |
+| `docs/download_by_plan_guide.md` | 下载指南 |
 
 ### 执行状态（2026-05-14）
 
-已按表格将条目整体搬迁至：
-
-- `legacy/old_downloader/`（内含 `scripts/` 与 `docs_archive/` 中的历史文档）
-
-如需恢复旧的下载链路，请以该目录作为只读归档参考，而不是与新 `src/` 混用同一入口。
+已整体搬迁至 `legacy/old_downloader/`。新工作流见 `docs/workflow.md` 与 `README.md`。
