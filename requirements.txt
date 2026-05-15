@@ -4,6 +4,7 @@ PyYAML
 pandas
 tqdm
 isodate
+rich
 
 # Optional: explicit HTTP for LLM client (fallback uses stdlib urllib)
 requests

@@ -4,6 +4,23 @@
 
 仓库同时提供离线 fixture（`data/fixtures`、`examples/`）与单测：`python -m unittest tests.test_offline_smoke -v`。
 
+### 交互式控制台使用方法
+
+中文菜单驱动的薄封装，入口与主 CLI 并存：
+
+```bash
+python -m src.console
+# 或
+python run_console.py
+```
+
+- 功能覆盖环境检查、`.env` 合写（`getpass`、尾 4 位提示）、检索任务向导 → `output/search_plan.yaml`、LLM plan、全链路/分步执行、过滤结果与拒收统计、`strategy-optimize`、打开本机目录、文档路径提示。
+- `rich` 已写入 `requirements.txt`；若未安装则自动回退纯文本界面。
+- 操作摘要写入 `logs/console_runs.log`（不含密钥）。
+- **测试建议**：优先在菜单 5 选择「测试模式」或设置环境变量 `DEMO_MAX`/`SKIP_FORMAT_PROBE`；自动化测试请勿批量打 YouTube API，可继续用 `python -m unittest tests.test_offline_smoke tests.test_console_checks -v`（离线 fixture + 最小导入测）。
+
+完整说明见 `docs/console_guide.md`。
+
 
 ### 能力与边界
 

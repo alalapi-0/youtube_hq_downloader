@@ -6,7 +6,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
-
+.venv-ci/
 # IDE / OS
 .idea/
 .DS_Store
@@ -28,3 +28,8 @@ cache/*.json
 /output/jsonl/*.jsonl
 /output/markdown/*.md
 /output/search_plan.yaml
+/output/_console*
+
+# Console / runtime logs (keep directory via .gitkeep)
+logs/*.log
+!logs/.gitkeep
