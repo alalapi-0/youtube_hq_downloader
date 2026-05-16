@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 from .utils import PROJECT_ROOT, load_yaml_mapping
 
 
-COOKIE_CONFIG_PATH = PROJECT_ROOT / "config" / "cookie_config.yaml"
+COOKIE_CONFIG_PATH = PROJECT_ROOT / "config" / "app.yaml"
 
 
 @dataclass
@@ -37,6 +37,16 @@ def load_cookie_settings(
 ) -> CookieSettings:
     raw = load_yaml_mapping(config_path) if Path(config_path).exists() else {}
     block: Dict[str, Any] = raw.get("cookie") if isinstance(raw.get("cookie"), dict) else {}
+    if not block and isinstance(raw.get("advanced"), dict):
+        adv = raw.get("advanced") or {}
+        block = {
+            "enabled": adv.get("use_cookie", False),
+            "mode": "file" if adv.get("cookie_file") else ("browser" if adv.get("cookies_from_browser") else "none"),
+            "cookie_file": adv.get("cookie_file", ""),
+            "browser": adv.get("cookies_from_browser") or "chrome",
+            "cookies_from_browser": bool(adv.get("cookies_from_browser")),
+            "never_log_cookie_content": adv.get("never_log_cookie_content", True),
+        }
     settings = CookieSettings(
         enabled=_truthy(block.get("enabled")),
         mode=str(block.get("mode") or "none"),

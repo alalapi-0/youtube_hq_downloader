@@ -14,13 +14,15 @@ from . import review_feedback_analyzer
 from . import review_schema
 from . import search_strategy_from_feedback
 from . import url_analyzer
-from . import llm_candidate_filter as llm_gate
-from . import llm_query_planner as llm_plan
 from . import llm_strategy_optimizer as strat
 from . import metadata_enrich
 from . import youtube_search
 from .cookie_loader import load_cookie_settings
-from .llm_client import GrokUnsupportedError
+from .core.config import FILTERS_CONFIG_PATH, LABELS_CONFIG_PATH, openrouter_api_key, youtube_api_key
+from .core.pipeline import import_feedback_for_task, run_new_task
+from .core.task import PipelineOptions
+from .llm.planner import fallback_search_plan, generate_search_plan
+from .llm.semantic_filter import semantic_filter_candidates
 from .search_plan_builder import build_search_plan_from_tasks, dump_search_plan
 from .utils import PROJECT_ROOT, coerce_candidate, load_yaml_mapping, read_jsonl, write_jsonl
 
@@ -37,8 +39,8 @@ def _truthy_flag(val: str | bool | None) -> bool:
 
 
 def _prompt_version() -> str:
-    cfg = load_yaml_mapping(PROJECT_ROOT / "config" / "llm_config.yaml")
-    return str((((cfg.get("cache") or {}) or {}).get("prompt_version")) or "v1")
+    cfg = load_yaml_mapping(PROJECT_ROOT / "config" / "app.yaml")
+    return str(((cfg.get("llm") or {}).get("prompt_version")) or "ad-url-scout-v1")
 
 
 def cmd_plan(ns: argparse.Namespace) -> int:
@@ -58,35 +60,16 @@ def cmd_plan(ns: argparse.Namespace) -> int:
         mechanical = build_search_plan_from_tasks(inp)
 
     blob: dict | None = None
-    cfg_path = PROJECT_ROOT / "config" / "llm_config.yaml"
-    prompts_path = PROJECT_ROOT / "config" / "llm_prompts.yaml"
 
     if want_llm:
         txt = inp.read_text(encoding="utf-8")
-        cfg = load_yaml_mapping(cfg_path)
-
-        lp = str(cfg.get("provider") or "").strip().lower()
-        keys_ok = bool(os.environ.get("OPENROUTER_API_KEY", "").strip() or os.environ.get("OPENAI_API_KEY", "").strip())
-
-        attempt_llm = want_llm
-        if lp in ("grok", "xai", "x.ai"):
-            print("[plan] WARN: Grok 尚未接入客户端 —详见 README", file=sys.stderr)
-            attempt_llm = False
-        elif not keys_ok:
-            print("[plan] WARN: missing OPENROUTER/OPENAI Key —跳过 LLM planner", file=sys.stderr)
-            attempt_llm = False
-
-        if attempt_llm:
-            try:
-                blob = llm_plan.plan_with_llm(
-                    user_text=txt,
-                    llm_config_path=cfg_path,
-                    prompts_path=prompts_path,
-                    skill_prompt_version=_prompt_version(),
-                )
-            except (GrokUnsupportedError, RuntimeError, Exception) as exc:
-                print(f"[plan] WARN: planner failed ({exc}) —fallback mechanical compose", file=sys.stderr)
-                blob = None
+        if not openrouter_api_key():
+            print("[plan] WARN: 未检测到 OPENROUTER_API_KEY，使用规则模式生成计划", file=sys.stderr)
+            blob = fallback_search_plan(txt, warning="missing_openrouter_key")
+        else:
+            blob, warnings = generate_search_plan(txt, use_ai=True)
+            for w in warnings:
+                print(f"[plan] WARN: {w}", file=sys.stderr)
 
     if blob and isinstance(blob.get("tasks"), list):
         dump_search_plan(outp, blob)
@@ -98,9 +81,14 @@ def cmd_plan(ns: argparse.Namespace) -> int:
         print(f"[plan] mechanical wrote -> {outp}")
         return 0
 
+    if lowered.endswith((".txt", ".md")):
+        blob = fallback_search_plan(inp.read_text(encoding="utf-8"), warning="rule_mode")
+        dump_search_plan(outp, blob)
+        print(f"[plan] rule-mode wrote -> {outp}")
+        return 0
+
     print(
-        "[plan] ERROR: 无法拼装 search_plan.yaml：需要提供 tasks YAML（search_tasks*.yaml），"
-        "或启用 LLM 且配置 Key 以编译自然语言需求",
+        "[plan] ERROR: 无法拼装 search_plan.yaml：请提供 YAML，或传入自然语言文本并启用 OpenRouter/规则 planner",
         file=sys.stderr,
     )
     return 2
@@ -108,10 +96,11 @@ def cmd_plan(ns: argparse.Namespace) -> int:
 
 def cmd_search(ns: argparse.Namespace) -> int:
     _root()
-    key = youtube_search.ensure_api_key()
+    key = youtube_api_key()
     if not key:
-        print("[search] ERROR: YOUTUBE_API_KEY not set (.env)", file=sys.stderr)
-        return 2
+        print("[search] WARN: 未检测到 YOUTUBE_API_KEY，无法自动按关键词搜索；写出空候选文件。", file=sys.stderr)
+        write_jsonl(Path(ns.output).resolve(), [])
+        return 0
     task_path = Path(ns.task).resolve()
     outp = Path(ns.output).resolve()
     rows = youtube_search.run_search_plan(task_path, key)
@@ -126,7 +115,7 @@ def cmd_enrich(ns: argparse.Namespace) -> int:
     inp = Path(ns.input).resolve()
     outp = Path(ns.output).resolve()
     rows = [coerce_candidate(r) for r in read_jsonl(inp)]
-    key = metadata_enrich.youtube_api_key()
+    key = youtube_api_key()
 
     if not key:
         print(
@@ -182,40 +171,16 @@ def cmd_llm_filter(ns: argparse.Namespace) -> int:
     rows = [coerce_candidate(r) for r in read_jsonl(inp)]
 
     if not use_llm:
-        gated = llm_gate.llm_semantic_gate_copy_skipped_defaults(rows)
-        kept = [coerce_candidate(r) for r in gated]
+        kept, rejected, warnings = semantic_filter_candidates(rows, use_ai=False)
         write_jsonl(outp, kept)
-        write_jsonl(out_rej, [])
+        write_jsonl(out_rej, rejected)
+        for w in warnings:
+            print(f"[llm-filter] WARN: {w}", file=sys.stderr)
         print(f"[llm-filter] skipped LLM semantic gate ({len(kept)}) -> {outp}")
         return 0
-
-    cfg_path = PROJECT_ROOT / "config" / "llm_config.yaml"
-    prompts_path = PROJECT_ROOT / "config" / "llm_prompts.yaml"
-
-    gated = llm_gate.annotate_candidates_llm(
-        rows,
-        llm_config_path=cfg_path,
-        prompts_path=prompts_path,
-        prompt_version=_prompt_version(),
-    )
-
-    kept: list[dict] = []
-    rejected: list[dict] = []
-    for r in gated:
-        rr = coerce_candidate(dict(r))
-
-        relevant = rr.get("llm_relevant")
-        if relevant is False:
-            codes = list(rr.get("rejection_codes") or [])
-            if "llm_not_relevant" not in codes:
-                codes.append("llm_not_relevant")
-            rr["rejection_codes"] = codes
-            rr["rejection_reason"] = (((rr.get("rejection_reason") or "") + "; ") if rr.get("rejection_reason") else "") + "LLM flagged not relevant"
-            rr["rejection_stage"] = "llm"
-            rr["hard_filter_pass"] = False
-            rejected.append(rr)
-        else:
-            kept.append(rr)
+    kept, rejected, warnings = semantic_filter_candidates(rows, use_ai=True)
+    for w in warnings:
+        print(f"[llm-filter] WARN: {w}", file=sys.stderr)
 
     write_jsonl(outp, kept)
     write_jsonl(out_rej, rejected)
@@ -234,10 +199,10 @@ def cmd_strategy(ns: argparse.Namespace) -> int:
     out_md = Path(ns.output_md).resolve()
     out_yaml = Path(ns.output_yaml).resolve()
 
-    fallback_tasks = PROJECT_ROOT / "config" / "search_tasks.demo.yaml"
+    fallback_tasks = PROJECT_ROOT / "examples" / "search_tasks.demo.yaml"
 
-    llm_paths = PROJECT_ROOT / "config" / "llm_config.yaml"
-    prompts = PROJECT_ROOT / "config" / "llm_prompts.yaml"
+    llm_paths = PROJECT_ROOT / "config" / "app.yaml"
+    prompts = PROJECT_ROOT / "config" / "app.yaml"
 
     use_llm = _truthy_flag(ns.use_llm)
 
@@ -470,11 +435,58 @@ def cmd_llm_analyze_feedback(ns: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run_task(ns: argparse.Namespace) -> int:
+    _root()
+    request_text = ""
+    if ns.request:
+        request_text = str(ns.request)
+    elif ns.request_file:
+        request_text = Path(ns.request_file).read_text(encoding="utf-8")
+    else:
+        print("[run-task] ERROR: 请提供 --request 或 --request-file", file=sys.stderr)
+        return 2
+    options = PipelineOptions(
+        ai_enabled=_truthy_flag(ns.ai),
+        use_network=not _truthy_flag(ns.offline),
+        offline_candidates_path=Path(ns.offline_candidates).resolve() if ns.offline_candidates else None,
+        skip_format_probe=_truthy_flag(ns.skip_format_probe),
+        max_results_per_query=int(ns.max_results) if str(ns.max_results or "").isdigit() else None,
+    )
+    result = run_new_task(request_text, options)
+    print(f"[run-task] 任务完成：{result.task_dir}")
+    print(f"[run-task] 人工审核表：{result.summary.get('review_sheet_csv')}")
+    if result.warnings:
+        for w in result.warnings:
+            print(f"[run-task] WARN: {w}", file=sys.stderr)
+    if result.errors:
+        for e in result.errors:
+            print(f"[run-task] ERROR: {e}", file=sys.stderr)
+    return 0
+
+
+def cmd_import_task_feedback(ns: argparse.Namespace) -> int:
+    _root()
+    task_dir = Path(ns.task_dir).resolve()
+    review_csv = Path(ns.review_csv).resolve()
+    if not task_dir.exists():
+        print(f"[import-task-feedback] ERROR: task dir not found: {task_dir}", file=sys.stderr)
+        return 2
+    if not review_csv.exists():
+        print(f"[import-task-feedback] ERROR: review csv not found: {review_csv}", file=sys.stderr)
+        return 2
+    result = import_feedback_for_task(task_dir, review_csv, use_ai=_truthy_flag(ns.ai))
+    print(f"[import-task-feedback] feedback={result['feedback_md']}")
+    print(f"[import-task-feedback] next_search_plan={result['next_search_plan']}")
+    for w in result.get("warnings") or []:
+        print(f"[import-task-feedback] WARN: {w}", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="YouTube URL sourcing / metadata / LLM filtering pipeline（无下载）")
+    p = argparse.ArgumentParser(description="Ad URL Scout：AI 增强广告视频 URL 寻源工具（默认不下载视频）")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pp = sub.add_parser("plan", help="search_tasks.yaml|.txt → output/search_plan.yaml")
+    pp = sub.add_parser("plan", help="自然语言需求或 YAML → search_plan.yaml")
     pp.add_argument("--input", required=True)
     pp.add_argument("--output", required=True)
     pp.add_argument("--use-llm", default="false")
@@ -497,7 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     pf = sub.add_parser("filter", help="YAML 规则闸门（硬阈值 + 配额）")
     pf.add_argument("--input", required=True)
-    pf.add_argument("--rules", default=str(PROJECT_ROOT / "config" / "filter_rules.yaml"))
+    pf.add_argument("--rules", default=str(FILTERS_CONFIG_PATH))
     pf.add_argument("--output", required=True)
     pf.add_argument("--rejected", required=True)
     pf.set_defaults(func=cmd_filter)
@@ -570,6 +582,22 @@ def build_parser() -> argparse.ArgumentParser:
     plfb.add_argument("--output-yaml", dest="output_yaml", required=True)
     plfb.add_argument("--use-llm", dest="use_llm", default="true")
     plfb.set_defaults(func=cmd_llm_analyze_feedback)
+
+    prun = sub.add_parser("run-task", help="普通用户主流程：自然语言需求 → 任务目录 → review_sheet.csv")
+    prun.add_argument("--request", default="")
+    prun.add_argument("--request-file", dest="request_file", default="")
+    prun.add_argument("--offline", default="false")
+    prun.add_argument("--offline-candidates", dest="offline_candidates", default="")
+    prun.add_argument("--skip-format-probe", dest="skip_format_probe", default="false")
+    prun.add_argument("--ai", default="true")
+    prun.add_argument("--max-results", dest="max_results", default="")
+    prun.set_defaults(func=cmd_run_task)
+
+    pitf = sub.add_parser("import-task-feedback", help="导入某个 output/tasks/task_* 的人工审核反馈")
+    pitf.add_argument("--task-dir", dest="task_dir", required=True)
+    pitf.add_argument("--review-csv", dest="review_csv", required=True)
+    pitf.add_argument("--ai", default="true")
+    pitf.set_defaults(func=cmd_import_task_feedback)
 
     return p
 

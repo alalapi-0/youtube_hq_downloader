@@ -9,7 +9,7 @@ import yaml
 from .utils import PROJECT_ROOT, load_yaml_mapping, read_jsonl
 
 
-URL_ANALYSIS_CONFIG_PATH = PROJECT_ROOT / "config" / "url_analysis.yaml"
+URL_ANALYSIS_CONFIG_PATH = PROJECT_ROOT / "config" / "app.yaml"
 
 
 DEFAULT_POSITIVE_EXPANSIONS = [
@@ -36,6 +36,14 @@ REJECT_REASON_NEGATIVE_KEYWORDS = {
 
 
 def _feedback_cfg(path: Path | str = URL_ANALYSIS_CONFIG_PATH) -> Dict[str, Any]:
+    if Path(path).name == "app.yaml":
+        raw = load_yaml_mapping(path) if Path(path).exists() else {}
+        block = raw.get("review") if isinstance(raw.get("review"), dict) else {}
+        return {
+            "min_sample_size_for_strategy": int(block.get("min_sample_size_for_strategy") or 20),
+            "high_pass_rate_threshold": float(block.get("high_pass_rate_threshold") or 0.4),
+            "low_pass_rate_threshold": float(block.get("low_pass_rate_threshold") or 0.1),
+        }
     raw = load_yaml_mapping(path) if Path(path).exists() else {}
     block = raw.get("feedback_analysis") if isinstance(raw.get("feedback_analysis"), dict) else {}
     return {
@@ -181,8 +189,8 @@ def build_rule_based_plan(stats: Dict[str, Any], reviewed_records: List[Dict[str
             "allow_format_probe": True,
         },
         "positive_negative_keywords": {
-            "negative_keywords_file": "config/negative_keywords.yaml",
-            "brand_positive_keywords_file": "config/brand_whitelist.yaml",
+            "negative_keywords_file": "config/filters.yaml",
+            "brand_positive_keywords_file": "config/brands.yaml",
             "suggested_negative_keywords": negative[:40],
             "suggested_positive_expansions": expansions[:40],
         },

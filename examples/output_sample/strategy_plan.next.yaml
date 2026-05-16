@@ -13,8 +13,8 @@ resolution:
   allow_text_evidence_when_format_unknown: true
   allow_format_probe: true
 positive_negative_keywords:
-  negative_keywords_file: config/negative_keywords.yaml
-  brand_positive_keywords_file: config/brand_whitelist.yaml
+  negative_keywords_file: config/filters.yaml
+  brand_positive_keywords_file: config/brands.yaml
   embedded_hint: []
 tasks:
 - id: demo_task

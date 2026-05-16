@@ -1,3 +1,20 @@
+## [3.0.0] - 2026-05-16
+
+### Changed
+
+- 项目重命名并产品化为 **Ad URL Scout / ad-url-scout**。
+- 普通用户入口改为 `python run.py`，默认走 OpenRouter-first 主流程。
+- 输出按 `output/tasks/task_*/` 组织。
+- 配置精简为 `config/app.yaml`、`config/filters.yaml`、`config/brands.yaml`、`config/labels.yaml`。
+- 旧配置、旧文档、旧控制台和旧技能说明移动到 `legacy/`。
+- README 重写，明确本项目不是视频下载器。
+
+### Added
+
+- `src/core/pipeline.py` 统一主流程。
+- `src/llm/openrouter_client.py` OpenRouter-only 客户端。
+- 新产品控制台 `src/console/`。
+
 ## [2.1.0] - 2026-05-14
 
 ### Added

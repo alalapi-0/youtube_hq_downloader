@@ -1,0 +1,68 @@
+luxury_fashion:
+  brand_names:
+    - Gucci
+    - Louis Vuitton
+    - Chanel
+    - Hermès
+    - Dior
+    - Prada
+    - Burberry
+    - Balenciaga
+    - Valentino
+    - Saint Laurent
+
+beauty:
+  brand_names:
+    - Dior Beauty
+    - Chanel Beauty
+    - Lancôme
+    - Estée Lauder
+    - YSL Beauty
+    - Guerlain
+
+jewelry_watches:
+  brand_names:
+    - Cartier
+    - Tiffany
+    - Bulgari
+    - Rolex
+    - Omega
+    - Patek Philippe
+
+automotive:
+  brand_names:
+    - Mercedes-Benz
+    - BMW
+    - Audi
+    - Porsche
+    - Lexus
+    - Volvo
+
+consumer_electronics:
+  brand_names:
+    - Apple
+    - Sony
+    - Samsung
+    - DJI
+    - Leica
+
+food_beverage:
+  brand_names:
+    - Nespresso
+    - Perrier
+    - Evian
+    - Starbucks
+
+positive_keywords:
+  - cinematic
+  - flagship
+  - commercial grade
+  - editorial
+  - campaign film
+  - product film
+  - brand film
+  - color grading
+  - studio lighting
+  - macro
+  - still life
+  - packshot

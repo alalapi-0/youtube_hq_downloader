@@ -1,4 +1,4 @@
-"""Batch YouTube URL sourcing, metadata enrichment, and rule filtering."""
+"""Ad URL Scout: AI-enhanced advertising/product/brand video URL sourcing."""
 
 __all__ = ["__version__"]
-__version__ = "2.1.0"
+__version__ = "3.0.0"

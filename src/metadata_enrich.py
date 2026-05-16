@@ -44,7 +44,7 @@ def enrich_records(records: List[Dict[str, Any]], api_key: str) -> List[Dict[str
     from googleapiclient.discovery import build
     from tqdm import tqdm
 
-    brand_cfg = load_yaml_mapping(PROJECT_ROOT / "config" / "brand_whitelist.yaml")
+    brand_cfg = load_yaml_mapping(PROJECT_ROOT / "config" / "brands.yaml")
     brand_names = flatten_brand_names(brand_cfg)
 
     youtube = build("youtube", "v3", developerKey=api_key)

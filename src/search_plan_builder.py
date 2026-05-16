@@ -35,9 +35,9 @@ def _safe_tasks_from_search_tasks_yaml(data: Dict[str, Any]) -> List[Dict[str, A
 def build_search_plan_from_tasks(
     tasks_yaml: Path | str,
     *,
-    filter_rules_yaml: Path | str | None = None,
-    negative_keywords_yaml: Path | str | None = None,
-    brand_whitelist_yaml: Path | str | None = None,
+    filters_yaml: Path | str | None = None,
+    keyword_filters_yaml: Path | str | None = None,
+    brand_catalog_yaml: Path | str | None = None,
 ) -> Dict[str, Any]:
     """
     Mechanical merge:`search_tasks*.yaml`（扁平 tasks）→ 完整 `search_plan` 文档树。
@@ -65,12 +65,12 @@ def build_search_plan_from_tasks(
     dur = {}
     res = {}
     nk_ref: Dict[str, Any] = {
-        "negative_keywords_file": "config/negative_keywords.yaml",
-        "brand_positive_keywords_file": "config/brand_whitelist.yaml",
+        "negative_keywords_file": "config/filters.yaml",
+        "brand_positive_keywords_file": "config/brands.yaml",
         "embedded_hint": [],
     }
 
-    fr_path = Path(filter_rules_yaml).resolve() if filter_rules_yaml else PROJECT_ROOT / "config" / "filter_rules.yaml"
+    fr_path = Path(filters_yaml).resolve() if filters_yaml else PROJECT_ROOT / "config" / "filters.yaml"
     if fr_path.exists():
         fr = load_yaml_mapping(fr_path)
         dur = fr.get("duration") or {}
@@ -81,16 +81,18 @@ def build_search_plan_from_tasks(
             fr.get("brand_positive_keywords_file") or nk_ref["brand_positive_keywords_file"]
         )
 
-    if negative_keywords_yaml and Path(negative_keywords_yaml).exists():
-        nk_data = load_yaml_mapping(Path(negative_keywords_yaml))
+    if keyword_filters_yaml and Path(keyword_filters_yaml).exists():
+        nk_data = load_yaml_mapping(Path(keyword_filters_yaml))
+        if isinstance(nk_data.get("negative_keywords"), dict):
+            nk_data = nk_data.get("negative_keywords") or {}
         nk_ref["embedded_hint"] = [
             f"ai_content_terms≈{len(nk_data.get('ai_content') or [])}",
             f"low_value_terms≈{len(nk_data.get('low_value_content') or [])}",
             f"high_risk_terms≈{len(nk_data.get('high_risk') or [])}",
         ]
 
-    if brand_whitelist_yaml and Path(brand_whitelist_yaml).exists():
-        bk = load_yaml_mapping(Path(brand_whitelist_yaml))
+    if brand_catalog_yaml and Path(brand_catalog_yaml).exists():
+        bk = load_yaml_mapping(Path(brand_catalog_yaml))
         cats = [k for k, v in bk.items() if isinstance(v, dict) and k != "positive_keywords"]
         if cats:
             nk_ref["brand_categories"] = sorted(set(cats))

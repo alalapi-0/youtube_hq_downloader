@@ -13,12 +13,8 @@ from .utils import PROJECT_ROOT, load_yaml_mapping
 
 
 ENV_EXAMPLE_KEYS = [
-    "YOUTUBE_API_KEY",
-    "OPENAI_API_KEY",
-    "OPENAI_BASE_URL",
     "OPENROUTER_API_KEY",
-    "OPENROUTER_BASE_URL",
-    "GROK_API_KEY",
+    "YOUTUBE_API_KEY",
 ]
 
 
@@ -76,12 +72,10 @@ def load_env_masked() -> dict[str, str]:
 
 def required_yaml_configs() -> list[tuple[str, Path, bool]]:
     rels = [
-        "config/filter_rules.yaml",
-        "config/llm_config.yaml",
-        "config/llm_prompts.yaml",
-        "config/brand_whitelist.yaml",
-        "config/negative_keywords.yaml",
-        "config/search_tasks.demo.yaml",
+        "config/app.yaml",
+        "config/filters.yaml",
+        "config/brands.yaml",
+        "config/labels.yaml",
     ]
     out: list[tuple[str, Path, bool]] = []
     for r in rels:
@@ -93,6 +87,7 @@ def required_yaml_configs() -> list[tuple[str, Path, bool]]:
 def important_dirs() -> list[tuple[str, Path, bool]]:
     pairs = [
         ("output", PROJECT_ROOT / "output"),
+        ("output/tasks", PROJECT_ROOT / "output" / "tasks"),
         ("data/raw", PROJECT_ROOT / "data" / "raw"),
         ("data/enriched", PROJECT_ROOT / "data" / "enriched"),
         ("data/filtered", PROJECT_ROOT / "data" / "filtered"),
@@ -168,7 +163,7 @@ def summarize_env_check(report: dict[str, object]) -> str:
 
 
 def brand_categories() -> list[str]:
-    p = PROJECT_ROOT / "config" / "brand_whitelist.yaml"
+    p = PROJECT_ROOT / "config" / "brands.yaml"
     if not p.exists():
         return []
     data = load_yaml_mapping(p)
@@ -182,7 +177,7 @@ def brand_categories() -> list[str]:
 
 
 def brand_names_for_category(category: str) -> list[str]:
-    p = PROJECT_ROOT / "config" / "brand_whitelist.yaml"
+    p = PROJECT_ROOT / "config" / "brands.yaml"
     if not p.exists():
         return []
     data = load_yaml_mapping(p)

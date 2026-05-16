@@ -8,15 +8,24 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 import yaml
 
-from .llm_client import ChatMessage, GrokUnsupportedError, openai_compatible_chat_completion, require_non_empty_api_key
+from .llm_client import ChatMessage, openai_compatible_chat_completion, require_non_empty_api_key
 from .review_schema import reviewed_rows
 from .utils import PROJECT_ROOT, load_yaml_mapping, read_jsonl
 
 
-URL_ANALYSIS_CONFIG_PATH = PROJECT_ROOT / "config" / "url_analysis.yaml"
+URL_ANALYSIS_CONFIG_PATH = PROJECT_ROOT / "config" / "app.yaml"
 
 
 def _feedback_cfg(path: Path | str = URL_ANALYSIS_CONFIG_PATH) -> Dict[str, Any]:
+    if Path(path).name == "app.yaml":
+        raw = load_yaml_mapping(path) if Path(path).exists() else {}
+        block = raw.get("review") if isinstance(raw.get("review"), dict) else {}
+        return {
+            "min_sample_size_for_strategy": int(block.get("min_sample_size_for_strategy") or 20),
+            "high_pass_rate_threshold": float(block.get("high_pass_rate_threshold") or 0.4),
+            "low_pass_rate_threshold": float(block.get("low_pass_rate_threshold") or 0.1),
+            "min_count_for_keyword_stats": int(block.get("min_count_for_keyword_stats") or 3),
+        }
     raw = load_yaml_mapping(path) if Path(path).exists() else {}
     block = raw.get("feedback_analysis") if isinstance(raw.get("feedback_analysis"), dict) else {}
     return {
@@ -399,7 +408,7 @@ def llm_analyze_feedback_file(
     output_md: Path | str,
     output_yaml: Path | str,
     use_llm: bool,
-    llm_config_path: Path | str = PROJECT_ROOT / "config" / "llm_config.yaml",
+    llm_config_path: Path | str = PROJECT_ROOT / "config" / "app.yaml",
 ) -> Tuple[str, Dict[str, Any]]:
     rows = list(read_jsonl(input_path))
     stats = json.loads(Path(stats_path).read_text(encoding="utf-8")) if Path(stats_path).exists() else analyze_feedback_records(rows)
@@ -410,7 +419,12 @@ def llm_analyze_feedback_file(
     elif summary.get("sample_size_too_small"):
         md, plan = _fallback_llm_outputs(rows, stats, "sample_size_too_small")
     else:
-        cfg = load_yaml_mapping(llm_config_path)
+        if Path(llm_config_path).name == "app.yaml":
+            from .core.config import llm_compat_config
+
+            cfg = llm_compat_config()
+        else:
+            cfg = load_yaml_mapping(llm_config_path)
         provider = str(cfg.get("provider") or "openrouter")
         model = str(cfg.get("model") or "gpt-4o-mini")
         payload = yaml.safe_dump(_llm_payload(rows, stats), allow_unicode=True, sort_keys=False)
@@ -441,7 +455,7 @@ def llm_analyze_feedback_file(
             plan = parsed.get("search_plan") if isinstance(parsed.get("search_plan"), dict) else {}
             if not plan:
                 _, plan = _fallback_llm_outputs(rows, stats, "llm_missing_search_plan")
-        except (GrokUnsupportedError, RuntimeError, ValueError, Exception) as exc:
+        except (RuntimeError, ValueError, Exception) as exc:
             md, plan = _fallback_llm_outputs(rows, stats, f"failed:{type(exc).__name__}")
 
     out_md = Path(output_md)

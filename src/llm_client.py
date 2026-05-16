@@ -8,10 +8,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, MutableMapping
 
 
-class GrokUnsupportedError(RuntimeError):
-    """Raised when user selects Grok explicitly; callers should log and degrade."""
-
-
 def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -23,35 +19,15 @@ class ChatMessage:
 
 
 def normalize_provider(raw: str) -> str:
-    p = (raw or "").strip().lower()
-    if p in ("grok", "xai", "x.ai"):
-        return "grok"
-    if p in ("openrouter",):
-        return "openrouter"
-    return "openai"
+    return "openrouter"
 
 
 def compose_base_url(provider: str, cfg: Mapping[str, Any]) -> tuple[str, str]:
     defaults = cfg.get("defaults") or {}
     env = cfg.get("env") or {}
-
-    prov = normalize_provider(provider)
-    if prov == "grok":
-        raise GrokUnsupportedError(
-            "Grok/xAI 不在本仓库支持范围内（HTTP 客户端未实现）。请将 config/llm_config.yaml provider 设为 "
-            "`openrouter` 或 `openai`，或为 LLM 相关子命令传入 `--use-llm false`。详见 README。"
-        )
-
-    if prov == "openrouter":
-        env_url = os.environ.get(str(env.get("openrouter_base_url") or "OPENROUTER_BASE_URL"), "").strip()
-        base = env_url or str(defaults.get("openrouter_base_url") or "https://openrouter.ai/api/v1")
-        key_env = str(env.get("openrouter_api_key") or "OPENROUTER_API_KEY")
-        api_key = os.environ.get(key_env, "").strip()
-        return base.rstrip("/"), api_key
-
-    env_url = os.environ.get(str(env.get("openai_base_url") or "OPENAI_BASE_URL"), "").strip()
-    base = env_url or str(defaults.get("openai_base_url") or "https://api.openai.com/v1")
-    key_env = str(env.get("openai_api_key") or "OPENAI_API_KEY")
+    env_url = os.environ.get(str(env.get("openrouter_base_url") or "OPENROUTER_BASE_URL"), "").strip()
+    base = env_url or str(defaults.get("openrouter_base_url") or cfg.get("base_url") or "https://openrouter.ai/api/v1")
+    key_env = str(env.get("openrouter_api_key") or cfg.get("api_key_env") or "OPENROUTER_API_KEY")
     api_key = os.environ.get(key_env, "").strip()
     return base.rstrip("/"), api_key
 
@@ -112,5 +88,5 @@ def require_non_empty_api_key(provider: str, cfg: Mapping[str, Any]) -> tuple[st
     """
     base, api_key = compose_base_url(provider, cfg)
     if not api_key and not _truthy_env("ALLOW_EMPTY_LLM_KEY"):
-        raise RuntimeError(f"Missing API key for provider={normalize_provider(provider)}")
+        raise RuntimeError("未检测到 OPENROUTER_API_KEY。请在 .env 中填写 OPENROUTER_API_KEY。")
     return base, api_key

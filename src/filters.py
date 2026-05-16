@@ -62,16 +62,20 @@ def apply_filters(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     cfg = load_yaml_mapping(rules_path)
 
-    nk = cfg.get("negative_keyword_sources") or {}
-    neg_rel = nk.get("negative_keywords_file") or "config/negative_keywords.yaml"
-    neg_yaml = resolve_path(project_root, str(neg_rel))
-    nk_data = load_yaml_mapping(neg_yaml)
+    if isinstance(cfg.get("negative_keywords"), dict):
+        nk_data = cfg.get("negative_keywords") or {}
+    else:
+        nk = cfg.get("negative_keyword_sources") or {}
+        neg_rel = nk.get("negative_keywords_file") or "config/filters.yaml"
+        neg_yaml = resolve_path(project_root, str(neg_rel))
+        loaded = load_yaml_mapping(neg_yaml)
+        nk_data = loaded.get("negative_keywords") if isinstance(loaded.get("negative_keywords"), dict) else loaded
 
     ai_keywords = sorted({str(x).lower() for x in (nk_data.get("ai_content") or []) if str(x).strip()})
     lv_keywords = sorted({str(x).lower() for x in (nk_data.get("low_value_content") or []) if str(x).strip()})
     hr_keywords = sorted({str(x).lower() for x in (nk_data.get("high_risk") or []) if str(x).strip()})
 
-    brand_rel = cfg.get("brand_positive_keywords_file") or "config/brand_whitelist.yaml"
+    brand_rel = cfg.get("brand_positive_keywords_file") or "config/brands.yaml"
     brand_yaml = resolve_path(project_root, str(brand_rel))
     brand_data = load_yaml_mapping(brand_yaml)
     pos_kw = sorted(
@@ -123,10 +127,21 @@ def apply_filters(
     dedupe_vid = _truthy(dedupe_cfg.get("by_video_id", True))
     max_per_channel = int(dedupe_cfg.get("max_per_channel") or 1)
     scope_key = str(dedupe_cfg.get("category_scope_field") or "category_subcategory")
-    wl_rel = dedupe_cfg.get("channel_whitelist_file") or "config/channel_whitelist.yaml"
-    wl_path = resolve_path(project_root, str(wl_rel))
     whitelist_max = int(dedupe_cfg.get("whitelist_max_per_channel", 3))
-    wl_ids, wl_subs = load_channel_whitelist(wl_path) if wl_path.exists() else (set(), [])
+    inline_wl = dedupe_cfg.get("channel_whitelist") if isinstance(dedupe_cfg.get("channel_whitelist"), dict) else {}
+    if inline_wl:
+        wl_ids = set(str(x).strip() for x in (inline_wl.get("channel_ids") or []) if str(x).strip())
+        wl_subs = [str(s).strip().lower() for s in (inline_wl.get("channel_title_contains") or []) if str(s).strip()]
+    else:
+        wl_rel = dedupe_cfg.get("channel_whitelist_file") or "config/filters.yaml"
+        wl_path = resolve_path(project_root, str(wl_rel))
+        wl_loaded = load_yaml_mapping(wl_path) if wl_path.exists() else {}
+        wl_block = ((wl_loaded.get("dedupe") or {}).get("channel_whitelist") or {}) if isinstance(wl_loaded, dict) else {}
+        if wl_block:
+            wl_ids = set(str(x).strip() for x in (wl_block.get("channel_ids") or []) if str(x).strip())
+            wl_subs = [str(s).strip().lower() for s in (wl_block.get("channel_title_contains") or []) if str(s).strip()]
+        else:
+            wl_ids, wl_subs = load_channel_whitelist(wl_path) if wl_path.exists() else (set(), [])
 
     def scope_bucket(r: Dict[str, Any]) -> str:
         if scope_key == "category_only":

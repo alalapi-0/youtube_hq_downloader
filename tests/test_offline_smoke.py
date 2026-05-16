@@ -19,10 +19,37 @@ class OfflineSmoke(unittest.TestCase):
     def test_plan_demo_writes_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             outp = Path(d) / "plan.yaml"
-            _run(["plan", "--input", "config/search_tasks.demo.yaml", "--output", str(outp), "--use-llm", "false"])
+            _run(["plan", "--input", "examples/search_tasks.demo.yaml", "--output", str(outp), "--use-llm", "false"])
             text = outp.read_text(encoding="utf-8")
             self.assertTrue(outp.exists())
             self.assertIn("tasks:", text)
+
+    def test_product_offline_pipeline(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            task_id = "task_20990101_001"
+            _run(
+                [
+                    "run-task",
+                    "--request",
+                    "我要找高端奢侈品官方广告，要求 4K，排除 review 和 unboxing",
+                    "--offline",
+                    "true",
+                    "--offline-candidates",
+                    "examples/sample_candidates.jsonl",
+                    "--skip-format-probe",
+                    "true",
+                    "--ai",
+                    "false",
+                    "--max-results",
+                    "2",
+                ]
+            )
+            task_root = ROOT / "output" / "tasks"
+            tasks = sorted(task_root.glob("task_*"), key=lambda p: p.stat().st_mtime, reverse=True)
+            self.assertTrue(tasks)
+            latest = tasks[0]
+            self.assertTrue((latest / "review_sheet.csv").exists())
+            self.assertTrue((latest / "run_summary.md").exists())
 
     def test_offline_fixture_pipeline(self) -> None:
         prev = os.environ.get("SKIP_FORMAT_PROBE")

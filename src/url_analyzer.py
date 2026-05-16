@@ -20,7 +20,7 @@ from .utils import PROJECT_ROOT, extract_video_id, load_yaml_mapping, read_jsonl
 from .webpage_metadata import empty_webpage_metadata, fetch_webpage_metadata
 
 
-URL_ANALYSIS_CONFIG_PATH = PROJECT_ROOT / "config" / "url_analysis.yaml"
+URL_ANALYSIS_CONFIG_PATH = PROJECT_ROOT / "config" / "app.yaml"
 
 
 REVIEW_COLUMNS = [
@@ -48,7 +48,15 @@ REVIEW_COLUMNS = [
 
 
 def load_url_analysis_config(path: Path | str = URL_ANALYSIS_CONFIG_PATH) -> Dict[str, Any]:
+    if Path(path).name == "app.yaml":
+        from .core.config import url_analysis_compat_config
+
+        return url_analysis_compat_config()
     cfg = load_yaml_mapping(path) if Path(path).exists() else {}
+    if not cfg:
+        from .core.config import url_analysis_compat_config
+
+        return url_analysis_compat_config()
     cfg.setdefault("url_analysis", {})
     cfg.setdefault("review_export", {})
     cfg.setdefault("feedback_analysis", {})

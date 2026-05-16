@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 import yaml
 
 from .llm_cache import CacheParams, cache_fingerprint, read_cache, write_cache
-from .llm_client import ChatMessage, GrokUnsupportedError, openai_compatible_chat_completion, require_non_empty_api_key
+from .llm_client import ChatMessage, openai_compatible_chat_completion, require_non_empty_api_key
 from .search_plan_builder import build_search_plan_from_tasks
 from .utils import PROJECT_ROOT, load_yaml_mapping, read_jsonl
 
@@ -108,8 +108,13 @@ def strategy_optimize_llm_bundle(
     prompts_path: Path,
     prompt_version: str,
 ) -> Tuple[Dict[str, Any], str]:
-    prompts = load_yaml_mapping(prompts_path)
-    cfg = load_yaml_mapping(llm_config_path)
+    prompts = load_yaml_mapping(prompts_path) if Path(prompts_path).exists() else {}
+    if Path(llm_config_path).name == "app.yaml":
+        from .core.config import llm_compat_config
+
+        cfg = llm_compat_config()
+    else:
+        cfg = load_yaml_mapping(llm_config_path)
     provider = str(cfg.get("provider") or "openrouter")
     model = str(cfg.get("model") or "gpt-4o-mini")
 
@@ -152,7 +157,7 @@ def strategy_optimize_llm_bundle(
         md_cached = str(cached["parsed"].get("markdown") or "# Strategy optimization (cached)\n")
         return (plan if isinstance(plan, dict) else {}), md_cached
 
-    sys_msg = str(prompts.get("strategy_optimizer_system") or "").strip()
+    sys_msg = str(prompts.get("strategy_optimizer_system") or "You revise a YAML search_plan using rejection statistics. Respond ONLY with YAML for the FULL updated search_plan tree.").strip()
 
     try:
         base, api_key = require_non_empty_api_key(provider, cfg)
@@ -177,7 +182,7 @@ def strategy_optimize_llm_bundle(
         meta = {"provider": provider, "model": model, "skill": "strategy_optimizer"}
         write_cache(cdir, fingerprint, meta=meta, raw_text=raw, parsed={"plan_yaml_text": raw, "markdown": md_out})
         return parsed_plan, md_out
-    except (GrokUnsupportedError, RuntimeError, ValueError):
+    except (RuntimeError, ValueError):
         pass
     except Exception:
         pass

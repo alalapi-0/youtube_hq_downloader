@@ -39,6 +39,8 @@ cache/*
 /output/markdown/*.md
 /output/search_plan.yaml
 /output/_console*
+/output/tasks/*
+!/output/tasks/.gitkeep
 
 # Console / runtime logs (keep directory via .gitkeep)
 logs/*.log

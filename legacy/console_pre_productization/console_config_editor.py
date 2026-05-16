@@ -64,11 +64,10 @@ def edit_yaml_file_interactive(path: Path, console_print) -> bool:
 
 def known_editable_configs() -> list[tuple[str, Path]]:
     return [
-        ("规则闸门 filter_rules.yaml", PROJECT_ROOT / "config" / "filter_rules.yaml"),
-        ("LLM 配置 llm_config.yaml", PROJECT_ROOT / "config" / "llm_config.yaml"),
-        ("URL 分析 url_analysis.yaml", PROJECT_ROOT / "config" / "url_analysis.yaml"),
-        ("人工审核标签 review_labels.yaml", PROJECT_ROOT / "config" / "review_labels.yaml"),
-        ("Cookie 配置 cookie_config.yaml", PROJECT_ROOT / "config" / "cookie_config.yaml"),
+        ("应用配置 app.yaml", PROJECT_ROOT / "config" / "app.yaml"),
+        ("过滤规则 filters.yaml", PROJECT_ROOT / "config" / "filters.yaml"),
+        ("品牌配置 brands.yaml", PROJECT_ROOT / "config" / "brands.yaml"),
+        ("人工审核标签 labels.yaml", PROJECT_ROOT / "config" / "labels.yaml"),
     ]
 
 

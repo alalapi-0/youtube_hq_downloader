@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 from .utils import PROJECT_ROOT, extract_video_id, read_jsonl, write_jsonl
 
 
-REVIEW_LABELS_PATH = PROJECT_ROOT / "config" / "review_labels.yaml"
+REVIEW_LABELS_PATH = PROJECT_ROOT / "config" / "labels.yaml"
 
 
 def load_review_labels(path: Path | str = REVIEW_LABELS_PATH) -> Dict[str, Any]:
