@@ -1,0 +1,69 @@
+project:
+  name: feedback_next_search_plan
+global_rules:
+  max_results_per_keyword: 3
+  default_region_code: US
+  default_relevance_language: en
+duration:
+  min_seconds: 30
+  max_seconds: 7200
+resolution:
+  require_4k: true
+  min_height: 2160
+  allow_text_evidence_when_format_unknown: false
+  allow_format_probe: true
+positive_negative_keywords:
+  negative_keywords_file: config/negative_keywords.yaml
+  brand_positive_keywords_file: config/brand_whitelist.yaml
+  suggested_negative_keywords:
+  - hd
+  - 1080p only
+  - review
+  - unboxing
+  - hands on
+  - first impression
+  suggested_positive_expansions:
+  - product film
+  - studio
+  - packshot
+  - still life
+  - macro
+  - campaign film
+  - commercial
+tasks:
+- id: feedback_rule_based_next_round
+  category: campaigns
+  subcategory: product
+  keywords:
+  - 4k
+  - product film
+  - perfume commercial
+  - commercial
+  - studio
+  - packshot
+  brands: []
+  preferred_channels: []
+  max_results_per_keyword: 3
+  region_code: US
+  relevance_language: en
+_strategy_suggestions:
+  sample_size_too_small: true
+  lower_priority_queries:
+  - bad
+  - flagship
+  channel_whitelist_suggestions: []
+  negative_keywords_suggested:
+  - hd
+  - 1080p only
+  - review
+  - unboxing
+  - hands on
+  - first impression
+  ranking_boosts:
+  - product film
+  - studio
+  - packshot
+  - still life
+  - macro
+  - campaign film
+  - commercial

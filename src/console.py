@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
 
     while True:
         menus.show_main_menu(use_rich=use_rich)
-        choice = menus.prompt_line("请选择 0-11", default="0", use_rich=use_rich).strip().lower()
+        choice = menus.prompt_line("请选择 0-12", default="0", use_rich=use_rich).strip().lower()
 
         try:
             if choice in ("0", "q", "quit", "exit"):
@@ -71,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
                 runner.run_open_dirs(use_rich=use_rich)
             elif choice == "11":
                 runner.run_help(use_rich=use_rich)
+            elif choice == "12":
+                runner.run_url_feedback_loop(session, use_rich=use_rich)
             else:
                 menus.print_warn("无效选项，请重试。", use_rich=use_rich)
         except KeyboardInterrupt:

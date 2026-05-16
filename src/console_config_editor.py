@@ -66,6 +66,9 @@ def known_editable_configs() -> list[tuple[str, Path]]:
     return [
         ("规则闸门 filter_rules.yaml", PROJECT_ROOT / "config" / "filter_rules.yaml"),
         ("LLM 配置 llm_config.yaml", PROJECT_ROOT / "config" / "llm_config.yaml"),
+        ("URL 分析 url_analysis.yaml", PROJECT_ROOT / "config" / "url_analysis.yaml"),
+        ("人工审核标签 review_labels.yaml", PROJECT_ROOT / "config" / "review_labels.yaml"),
+        ("Cookie 配置 cookie_config.yaml", PROJECT_ROOT / "config" / "cookie_config.yaml"),
     ]
 
 

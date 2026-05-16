@@ -117,6 +117,7 @@ def show_main_menu(*, use_rich: bool) -> None:
         "9. 策略优化（strategy-optimize）",
         "10. 打开常用目录（本机文件管理器）",
         "11. 帮助（文档路径）",
+        "12. URL 分析与人工反馈闭环",
     ]
     body = "\n".join(lines)
     print_panel("主菜单 — YouTube URL 控制台", body, use_rich=use_rich)

@@ -10,11 +10,16 @@ from dotenv import load_dotenv
 from . import exporters
 from . import filters as filters_mod
 from . import format_probe
+from . import review_feedback_analyzer
+from . import review_schema
+from . import search_strategy_from_feedback
+from . import url_analyzer
 from . import llm_candidate_filter as llm_gate
 from . import llm_query_planner as llm_plan
 from . import llm_strategy_optimizer as strat
 from . import metadata_enrich
 from . import youtube_search
+from .cookie_loader import load_cookie_settings
 from .llm_client import GrokUnsupportedError
 from .search_plan_builder import build_search_plan_from_tasks, dump_search_plan
 from .utils import PROJECT_ROOT, coerce_candidate, load_yaml_mapping, read_jsonl, write_jsonl
@@ -318,6 +323,153 @@ def cmd_export(ns: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_analyze_url(ns: argparse.Namespace) -> int:
+    _root()
+    inp = Path(ns.input).resolve()
+    outp = Path(ns.output).resolve()
+    if not inp.exists():
+        print(f"[analyze-url] ERROR: input not found: {inp}", file=sys.stderr)
+        return 2
+
+    cookie_settings = load_cookie_settings(
+        cookie_file=ns.cookie_file or None,
+        cookies_from_browser=ns.cookies_from_browser or None,
+        enable_cookie=bool(ns.cookie_file or ns.cookies_from_browser) or None,
+    )
+    if cookie_settings.warning:
+        print(f"[analyze-url] COOKIE NOTICE: {cookie_settings.warning}", file=sys.stderr)
+    if ns.cookies_from_browser:
+        print(
+            "[analyze-url] COOKIE NOTICE: cookies-from-browser 只用于读取你本机浏览器已可访问的页面元数据，"
+            "不会绕过权限，也不会下载受限内容。",
+            file=sys.stderr,
+        )
+
+    offline = _truthy_flag(ns.offline)
+    records = url_analyzer.analyze_url_file(
+        input_path=inp,
+        output_path=outp,
+        cookie_settings=cookie_settings,
+        offline=offline,
+    )
+
+    if not _truthy_flag(ns.no_review_export):
+        cfg = url_analyzer.load_url_analysis_config()
+        review_cfg = cfg.get("review_export") or {}
+        csv_path = Path(ns.review_csv or review_cfg.get("output_csv") or "output/review/review_sheet.csv")
+        md_path = Path(ns.review_md or review_cfg.get("output_md") or "output/review/review_sheet.md")
+        if not csv_path.is_absolute():
+            csv_path = PROJECT_ROOT / csv_path
+        if not md_path.is_absolute():
+            md_path = PROJECT_ROOT / md_path
+        url_analyzer.export_review_sheet(records, output_csv=csv_path, output_md=md_path)
+        print(f"[analyze-url] review sheet csv={csv_path} md={md_path}")
+
+    print(f"[analyze-url] wrote {len(records)} rows -> {outp}")
+    return 0
+
+
+def cmd_export_review(ns: argparse.Namespace) -> int:
+    _root()
+    analysis = Path(ns.analysis).resolve()
+    if not analysis.exists():
+        print(f"[export-review] ERROR: analysis not found: {analysis}", file=sys.stderr)
+        return 2
+    csv_path = Path(ns.output_csv).resolve()
+    md_path = Path(ns.output_md).resolve()
+    url_analyzer.export_review_sheet_from_file(
+        analysis_path=analysis,
+        output_csv=csv_path,
+        output_md=md_path,
+        include_existing_manual=_truthy_flag(ns.include_existing_manual),
+    )
+    print(f"[export-review] wrote csv={csv_path} md={md_path}")
+    return 0
+
+
+def cmd_import_review(ns: argparse.Namespace) -> int:
+    _root()
+    analysis = Path(ns.analysis).resolve()
+    review_csv = Path(ns.review_csv).resolve()
+    output = Path(ns.output).resolve()
+    if not analysis.exists():
+        print(f"[import-review] ERROR: analysis not found: {analysis}", file=sys.stderr)
+        return 2
+    if not review_csv.exists():
+        print(f"[import-review] ERROR: review csv not found: {review_csv}", file=sys.stderr)
+        return 2
+    _rows, summary = review_schema.import_manual_reviews(
+        analysis_path=analysis,
+        review_csv_path=review_csv,
+        output_path=output,
+    )
+    print(
+        "[import-review] "
+        f"updated={summary['review_rows_updated']} unmatched={summary['review_rows_unmatched']} -> {output}"
+    )
+    if summary.get("unrecognized_labels"):
+        print(f"[import-review] WARN: unrecognized_labels={summary['unrecognized_labels']}", file=sys.stderr)
+    return 0
+
+
+def cmd_analyze_feedback(ns: argparse.Namespace) -> int:
+    _root()
+    inp = Path(ns.input).resolve()
+    if not inp.exists():
+        print(f"[analyze-feedback] ERROR: input not found: {inp}", file=sys.stderr)
+        return 2
+    stats = review_feedback_analyzer.analyze_feedback_file(
+        input_path=inp,
+        output_md=Path(ns.output_md).resolve(),
+        output_json=Path(ns.output_json).resolve(),
+    )
+    summary = stats.get("summary") or {}
+    print(
+        "[analyze-feedback] "
+        f"reviewed={summary.get('total_reviewed', 0)} pass_rate={summary.get('pass_rate', 0)} "
+        f"md={Path(ns.output_md).resolve()} json={Path(ns.output_json).resolve()}"
+    )
+    return 0
+
+
+def cmd_strategy_from_feedback(ns: argparse.Namespace) -> int:
+    _root()
+    feedback = Path(ns.feedback_json).resolve()
+    reviewed = Path(ns.reviewed_jsonl).resolve()
+    if not feedback.exists():
+        print(f"[strategy-from-feedback] ERROR: feedback json not found: {feedback}", file=sys.stderr)
+        return 2
+    search_strategy_from_feedback.generate_rule_based_strategy(
+        feedback_json_path=feedback,
+        reviewed_jsonl_path=reviewed,
+        output_md=Path(ns.output_md).resolve(),
+        output_yaml=Path(ns.output_yaml).resolve(),
+    )
+    print(f"[strategy-from-feedback] wrote md={Path(ns.output_md).resolve()} yaml={Path(ns.output_yaml).resolve()}")
+    return 0
+
+
+def cmd_llm_analyze_feedback(ns: argparse.Namespace) -> int:
+    _root()
+    inp = Path(ns.input).resolve()
+    stats = Path(ns.stats).resolve()
+    if not inp.exists():
+        print(f"[llm-analyze-feedback] ERROR: input not found: {inp}", file=sys.stderr)
+        return 2
+    if not stats.exists():
+        print(f"[llm-analyze-feedback] ERROR: stats not found: {stats}", file=sys.stderr)
+        return 2
+    review_feedback_analyzer.llm_analyze_feedback_file(
+        input_path=inp,
+        stats_path=stats,
+        output_md=Path(ns.output_md).resolve(),
+        output_yaml=Path(ns.output_yaml).resolve(),
+        use_llm=_truthy_flag(ns.use_llm),
+    )
+    print(f"[llm-analyze-feedback] wrote md={Path(ns.output_md).resolve()} yaml={Path(ns.output_yaml).resolve()}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="YouTube URL sourcing / metadata / LLM filtering pipeline（无下载）")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -373,6 +525,51 @@ def build_parser() -> argparse.ArgumentParser:
     px.add_argument("--rejected-rule", dest="rejected_rule", default="")
     px.add_argument("--rejected-llm", dest="rejected_llm", default="")
     px.set_defaults(func=cmd_export)
+
+    pau = sub.add_parser("analyze-url", help="URL/JSONL/CSV → structured URL analysis JSONL + review sheet")
+    pau.add_argument("--input", required=True)
+    pau.add_argument("--output", required=True)
+    pau.add_argument("--review-csv", dest="review_csv", default="")
+    pau.add_argument("--review-md", dest="review_md", default="")
+    pau.add_argument("--cookie-file", dest="cookie_file", default="")
+    pau.add_argument("--cookies-from-browser", dest="cookies_from_browser", default="")
+    pau.add_argument("--offline", default="false", help="true 时只使用输入中已有字段，不访问 API/yt-dlp/网页")
+    pau.add_argument("--no-review-export", dest="no_review_export", default="false")
+    pau.set_defaults(func=cmd_analyze_url)
+
+    per = sub.add_parser("export-review", help="analysis JSONL → manual review CSV/Markdown")
+    per.add_argument("--analysis", required=True)
+    per.add_argument("--output-csv", dest="output_csv", default=str(PROJECT_ROOT / "output" / "review" / "review_sheet.csv"))
+    per.add_argument("--output-md", dest="output_md", default=str(PROJECT_ROOT / "output" / "review" / "review_sheet.md"))
+    per.add_argument("--include-existing-manual", dest="include_existing_manual", default="false")
+    per.set_defaults(func=cmd_export_review)
+
+    pir = sub.add_parser("import-review", help="filled review CSV → merge manual_review into analysis JSONL")
+    pir.add_argument("--analysis", required=True)
+    pir.add_argument("--review-csv", dest="review_csv", required=True)
+    pir.add_argument("--output", required=True)
+    pir.set_defaults(func=cmd_import_review)
+
+    paf = sub.add_parser("analyze-feedback", help="manual reviewed JSONL → feedback statistics")
+    paf.add_argument("--input", required=True)
+    paf.add_argument("--output-md", dest="output_md", required=True)
+    paf.add_argument("--output-json", dest="output_json", required=True)
+    paf.set_defaults(func=cmd_analyze_feedback)
+
+    psf = sub.add_parser("strategy-from-feedback", help="feedback stats → rule-based next search strategy")
+    psf.add_argument("--feedback-json", dest="feedback_json", required=True)
+    psf.add_argument("--reviewed-jsonl", dest="reviewed_jsonl", required=True)
+    psf.add_argument("--output-md", dest="output_md", default=str(PROJECT_ROOT / "output" / "strategy" / "rule_based_next_search_strategy.md"))
+    psf.add_argument("--output-yaml", dest="output_yaml", default=str(PROJECT_ROOT / "output" / "strategy" / "rule_based_next_search_plan.yaml"))
+    psf.set_defaults(func=cmd_strategy_from_feedback)
+
+    plfb = sub.add_parser("llm-analyze-feedback", help="manual reviewed JSONL + stats → optional LLM next search plan")
+    plfb.add_argument("--input", required=True)
+    plfb.add_argument("--stats", required=True)
+    plfb.add_argument("--output-md", dest="output_md", required=True)
+    plfb.add_argument("--output-yaml", dest="output_yaml", required=True)
+    plfb.add_argument("--use-llm", dest="use_llm", default="true")
+    plfb.set_defaults(func=cmd_llm_analyze_feedback)
 
     return p
 

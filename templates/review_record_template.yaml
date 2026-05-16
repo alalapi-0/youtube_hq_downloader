@@ -1,0 +1,11 @@
+video_url: ""
+video_id: ""
+manual_review:
+  status: pending
+  passed:
+  reject_reasons: []
+  pass_features: []
+  notes: ""
+  reviewer: ""
+  reviewed_at: ""
+  unrecognized_labels: []

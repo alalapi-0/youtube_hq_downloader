@@ -1,0 +1,197 @@
+{
+  "summary": {
+    "total_reviewed": 4,
+    "passed": 2,
+    "rejected": 2,
+    "uncertain": 0,
+    "pass_rate": 0.5,
+    "sample_size_too_small": true,
+    "min_sample_size_for_strategy": 20
+  },
+  "by_category": [
+    {
+      "key": "campaigns",
+      "total": 4,
+      "pass": 2,
+      "reject": 2,
+      "uncertain": 0,
+      "pass_rate": 0.5
+    }
+  ],
+  "by_subcategory": [
+    {
+      "key": "product",
+      "total": 4,
+      "pass": 2,
+      "reject": 2,
+      "uncertain": 0,
+      "pass_rate": 0.5
+    }
+  ],
+  "by_brand": [
+    {
+      "key": "unknown",
+      "total": 4,
+      "pass": 2,
+      "reject": 2,
+      "uncertain": 0,
+      "pass_rate": 0.5
+    }
+  ],
+  "by_channel_title": [
+    {
+      "key": "Luxury Perfume Official",
+      "total": 1,
+      "pass": 1,
+      "reject": 0,
+      "uncertain": 0,
+      "pass_rate": 1.0
+    },
+    {
+      "key": "Rick Astley",
+      "total": 1,
+      "pass": 1,
+      "reject": 0,
+      "uncertain": 0,
+      "pass_rate": 1.0
+    },
+    {
+      "key": "motor official trailer channel",
+      "total": 1,
+      "pass": 0,
+      "reject": 1,
+      "uncertain": 0,
+      "pass_rate": 0.0
+    },
+    {
+      "key": "spam",
+      "total": 1,
+      "pass": 0,
+      "reject": 1,
+      "uncertain": 0,
+      "pass_rate": 0.0
+    }
+  ],
+  "by_query_used": [
+    {
+      "key": "4k",
+      "total": 1,
+      "pass": 1,
+      "reject": 0,
+      "uncertain": 0,
+      "pass_rate": 1.0
+    },
+    {
+      "key": "product film; perfume commercial",
+      "total": 1,
+      "pass": 1,
+      "reject": 0,
+      "uncertain": 0,
+      "pass_rate": 1.0
+    },
+    {
+      "key": "bad",
+      "total": 1,
+      "pass": 0,
+      "reject": 1,
+      "uncertain": 0,
+      "pass_rate": 0.0
+    },
+    {
+      "key": "flagship",
+      "total": 1,
+      "pass": 0,
+      "reject": 1,
+      "uncertain": 0,
+      "pass_rate": 0.0
+    }
+  ],
+  "by_duration_range": [
+    {
+      "key": "3-9min",
+      "total": 2,
+      "pass": 1,
+      "reject": 1,
+      "uncertain": 0,
+      "pass_rate": 0.5
+    },
+    {
+      "key": "90-179s",
+      "total": 2,
+      "pass": 1,
+      "reject": 1,
+      "uncertain": 0,
+      "pass_rate": 0.5
+    }
+  ],
+  "by_max_format_height": [
+    {
+      "key": "unknown",
+      "total": 4,
+      "pass": 2,
+      "reject": 2,
+      "uncertain": 0,
+      "pass_rate": 0.5
+    }
+  ],
+  "common_reject_reasons": [
+    {
+      "label": "not_4k",
+      "count": 2
+    },
+    {
+      "label": "review_or_unboxing",
+      "count": 2
+    },
+    {
+      "label": "compression_blocks",
+      "count": 1
+    }
+  ],
+  "common_pass_features": [
+    {
+      "label": "high_resolution_confirmed",
+      "count": 2
+    },
+    {
+      "label": "strong_commercial_style",
+      "count": 1
+    },
+    {
+      "label": "official_brand_channel",
+      "count": 1
+    },
+    {
+      "label": "product_focused",
+      "count": 1
+    },
+    {
+      "label": "clean_studio_visual",
+      "count": 1
+    }
+  ],
+  "high_pass_keywords": [
+    {
+      "keyword": "commercial",
+      "total": 3,
+      "pass": 2,
+      "pass_rate": 0.6667
+    }
+  ],
+  "low_pass_keywords": [],
+  "high_pass_channels": [],
+  "low_pass_channels": [],
+  "metadata_risk_features": [
+    {
+      "label": "max_format_height unknown",
+      "count": 2
+    }
+  ],
+  "recommended_next_directions": [
+    "sample_size_too_small: keep the next strategy conservative until more reviewed examples are available.",
+    "Increase keyword family: commercial (pass_rate=0.6667, n=3).",
+    "Strengthen filter for reject reason: not_4k (count=2).",
+    "Strengthen filter for reject reason: review_or_unboxing (count=2).",
+    "Strengthen filter for reject reason: compression_blocks (count=1)."
+  ]
+}

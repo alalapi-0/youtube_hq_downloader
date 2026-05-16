@@ -14,15 +14,22 @@ from . import console_config_editor
 from . import console_menu as menus
 from . import console_wizard as wiz
 from .main import (
+    cmd_analyze_feedback,
+    cmd_analyze_url,
     cmd_enrich,
     cmd_export,
+    cmd_export_review,
     cmd_filter,
+    cmd_import_review,
+    cmd_llm_analyze_feedback,
     cmd_llm_filter,
     cmd_plan,
     cmd_probe,
     cmd_search,
     cmd_strategy,
+    cmd_strategy_from_feedback,
 )
+from . import review_feedback_analyzer
 from .search_plan_builder import dump_search_plan, load_search_plan
 from .utils import PROJECT_ROOT, read_jsonl
 
@@ -602,6 +609,166 @@ def run_strategy_flow(session: Any, *, use_rich: bool) -> None:
     wiz.log_console_event(f"strategy rc={rc} use_llm={use_llm}")
 
 
+def _prompt_project_path(prompt: str, default: str, *, use_rich: bool) -> Path:
+    raw = menus.prompt_line(prompt, default=default, use_rich=use_rich).strip()
+    p = Path(raw).expanduser()
+    return p if p.is_absolute() else (PROJECT_ROOT / p).resolve()
+
+
+def _preview_text_file(path: Path, *, title: str, use_rich: bool, max_lines: int = 80) -> None:
+    if not path.exists():
+        menus.print_warn(f"文件不存在：{path}", use_rich=use_rich)
+        return
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[:max_lines]
+    menus.print_panel(title, "\n".join(lines) if lines else "（空）", use_rich=use_rich)
+
+
+def _default_feedback_paths() -> dict[str, Path]:
+    return {
+        "analysis": PROJECT_ROOT / "data" / "url_analysis" / "url_analysis.jsonl",
+        "review_csv": PROJECT_ROOT / "output" / "review" / "review_sheet.csv",
+        "filled_csv": PROJECT_ROOT / "output" / "review" / "review_sheet_filled.csv",
+        "manual": PROJECT_ROOT / "data" / "manual_reviews" / "manual_reviewed.jsonl",
+        "feedback_md": PROJECT_ROOT / "output" / "strategy" / "feedback_analysis.md",
+        "feedback_json": PROJECT_ROOT / "data" / "feedback_analysis" / "feedback_analysis.json",
+        "rule_md": PROJECT_ROOT / "output" / "strategy" / "rule_based_next_search_strategy.md",
+        "rule_yaml": PROJECT_ROOT / "output" / "strategy" / "rule_based_next_search_plan.yaml",
+        "llm_md": PROJECT_ROOT / "output" / "strategy" / "llm_feedback_strategy.md",
+        "llm_yaml": PROJECT_ROOT / "output" / "strategy" / "llm_next_search_plan.yaml",
+    }
+
+
+def run_url_feedback_loop(session: Any, *, use_rich: bool) -> None:
+    paths = _default_feedback_paths()
+    while True:
+        menus.print_panel(
+            "URL 分析与人工反馈闭环",
+            "\n".join(
+                [
+                    "1. 分析一批 URL 页面元数据",
+                    "2. 导出人工审核表",
+                    "3. 导入人工审核结果",
+                    "4. 查看人工审核通过率",
+                    "5. 分析通过/不通过特征",
+                    "6. 使用 LLM 分析反馈并生成下一轮搜索计划",
+                    "7. 查看下一轮搜索策略文件",
+                    "0. 返回主菜单",
+                ]
+            ),
+            use_rich=use_rich,
+        )
+        choice = menus.prompt_line("请选择 0-7", default="0", use_rich=use_rich).strip()
+        if choice == "0":
+            return
+        if choice == "1":
+            inp = _prompt_project_path("输入 URL/CSV/JSONL", "examples/candidates.example.jsonl", use_rich=use_rich)
+            out = _prompt_project_path("输出 analysis JSONL", str(paths["analysis"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            offline = menus.confirm("仅使用已有字段（不访问 API/yt-dlp/网页）？", default_no=False, use_rich=use_rich)
+            cookie_file = ""
+            cookies_browser = ""
+            if not offline and menus.confirm("是否显式使用 cookie.txt 文件？", default_no=True, use_rich=use_rich):
+                cookie_file = str(_prompt_project_path("cookie.txt 路径", "private/cookies.txt", use_rich=use_rich))
+            elif not offline and menus.confirm("是否显式使用 yt-dlp cookies-from-browser？", default_no=True, use_rich=use_rich):
+                menus.print_warn(
+                    "cookies-from-browser 只用于你自己浏览器已可访问的页面信息，不用于绕过权限或下载受限内容。",
+                    use_rich=use_rich,
+                )
+                cookies_browser = menus.prompt_line("browser", default="chrome", use_rich=use_rich)
+            rc = cmd_analyze_url(
+                SimpleNamespace(
+                    input=str(inp),
+                    output=str(out),
+                    review_csv=str(paths["review_csv"]),
+                    review_md=str(PROJECT_ROOT / "output" / "review" / "review_sheet.md"),
+                    cookie_file=cookie_file,
+                    cookies_from_browser=cookies_browser,
+                    offline="true" if offline else "false",
+                    no_review_export="false",
+                )
+            )
+            menus.print_info(f"analyze-url rc={rc}", use_rich=use_rich)
+            wiz.log_console_event(f"url_feedback analyze rc={rc}")
+        elif choice == "2":
+            analysis = _prompt_project_path("analysis JSONL", str(paths["analysis"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            csv_out = _prompt_project_path("审核 CSV 输出", str(paths["review_csv"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            md_out = _prompt_project_path("审核 Markdown 输出", "output/review/review_sheet.md", use_rich=use_rich)
+            rc = cmd_export_review(
+                SimpleNamespace(
+                    analysis=str(analysis),
+                    output_csv=str(csv_out),
+                    output_md=str(md_out),
+                    include_existing_manual="false",
+                )
+            )
+            menus.print_info(f"export-review rc={rc}", use_rich=use_rich)
+        elif choice == "3":
+            filled = _prompt_project_path("已填写审核 CSV", str(paths["filled_csv"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            if not filled.exists():
+                menus.print_warn(
+                    "请先打开 output/review/review_sheet.csv，填写 manual_status、manual_passed、"
+                    "manual_reject_reasons、manual_notes 后再导入。",
+                    use_rich=use_rich,
+                )
+                continue
+            analysis = _prompt_project_path("analysis JSONL", str(paths["analysis"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            out = _prompt_project_path("manual reviewed JSONL 输出", str(paths["manual"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            rc = cmd_import_review(SimpleNamespace(analysis=str(analysis), review_csv=str(filled), output=str(out)))
+            menus.print_info(f"import-review rc={rc}", use_rich=use_rich)
+        elif choice == "4":
+            manual = _prompt_project_path("manual reviewed JSONL", str(paths["manual"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            if not manual.exists():
+                menus.print_warn("还没有 manual_reviewed.jsonl，请先导入人工审核结果。", use_rich=use_rich)
+                continue
+            stats = review_feedback_analyzer.analyze_feedback_records(list(read_jsonl(manual)))
+            s = stats.get("summary") or {}
+            rows = [
+                ("总审核数", str(s.get("total_reviewed", 0))),
+                ("通过", str(s.get("passed", 0))),
+                ("不通过", str(s.get("rejected", 0))),
+                ("通过率", f"{float(s.get('pass_rate') or 0) * 100:.1f}%"),
+                ("sample_size_too_small", str(bool(s.get("sample_size_too_small")))),
+            ]
+            menus.show_table(["指标", "值"], rows, title="人工审核通过率", use_rich=use_rich)
+        elif choice == "5":
+            manual = _prompt_project_path("manual reviewed JSONL", str(paths["manual"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            rc = cmd_analyze_feedback(
+                SimpleNamespace(input=str(manual), output_md=str(paths["feedback_md"]), output_json=str(paths["feedback_json"]))
+            )
+            if rc == 0:
+                rc2 = cmd_strategy_from_feedback(
+                    SimpleNamespace(
+                        feedback_json=str(paths["feedback_json"]),
+                        reviewed_jsonl=str(manual),
+                        output_md=str(paths["rule_md"]),
+                        output_yaml=str(paths["rule_yaml"]),
+                    )
+                )
+                menus.print_info(f"analyze-feedback rc={rc}; strategy-from-feedback rc={rc2}", use_rich=use_rich)
+            else:
+                menus.print_err(f"analyze-feedback rc={rc}", use_rich=use_rich)
+        elif choice == "6":
+            manual = _prompt_project_path("manual reviewed JSONL", str(paths["manual"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            stats = _prompt_project_path("feedback stats JSON", str(paths["feedback_json"].relative_to(PROJECT_ROOT)), use_rich=use_rich)
+            use_llm = menus.confirm("确认调用 LLM 做反馈分析？", default_no=True, use_rich=use_rich)
+            rc = cmd_llm_analyze_feedback(
+                SimpleNamespace(
+                    input=str(manual),
+                    stats=str(stats),
+                    output_md=str(paths["llm_md"]),
+                    output_yaml=str(paths["llm_yaml"]),
+                    use_llm="true" if use_llm else "false",
+                )
+            )
+            menus.print_info(f"llm-analyze-feedback rc={rc}", use_rich=use_rich)
+        elif choice == "7":
+            _preview_text_file(paths["rule_md"], title="规则策略 Markdown", use_rich=use_rich)
+            _preview_text_file(paths["rule_yaml"], title="规则策略 YAML", use_rich=use_rich)
+            _preview_text_file(paths["llm_md"], title="LLM 策略 Markdown", use_rich=use_rich)
+            _preview_text_file(paths["llm_yaml"], title="LLM 策略 YAML", use_rich=use_rich)
+        else:
+            menus.print_warn("无效选项。", use_rich=use_rich)
+
+
 def run_open_dirs(*, use_rich: bool) -> None:
     menus.print_panel(
         "打开目录",
@@ -633,6 +800,9 @@ def doc_paths() -> list[Path]:
         PROJECT_ROOT / "docs" / "filtering_rules.md",
         PROJECT_ROOT / "docs" / "llm_layer.md",
         PROJECT_ROOT / "docs" / "manual_review_guide.md",
+        PROJECT_ROOT / "docs" / "url_analysis_module.md",
+        PROJECT_ROOT / "docs" / "cookie_usage_guide.md",
+        PROJECT_ROOT / "docs" / "review_feedback_loop.md",
         PROJECT_ROOT / "README.md",
     ]
 

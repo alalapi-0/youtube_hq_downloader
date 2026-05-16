@@ -1,4 +1,8 @@
 .env
+private/
+*.cookie
+cookies.txt
+cookie_config.local.yaml
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -17,12 +21,18 @@ state/
 
 # LLM / pipeline cache (keep directory via .gitkeep)
 cache/*.json
+cache/
+!cache/
+cache/*
+!cache/.gitkeep
 
 # Generated pipeline intermediates / exports (fixtures + examples committed separately)
 /data/raw/*.jsonl
 /data/enriched/*.jsonl
 /data/filtered/*.jsonl
 /data/rejected/*.jsonl
+/data/url_analysis/*.local.jsonl
+/data/manual_reviews/*.local.jsonl
 
 /output/csv/*.csv
 /output/jsonl/*.jsonl
@@ -32,4 +42,7 @@ cache/*.json
 
 # Console / runtime logs (keep directory via .gitkeep)
 logs/*.log
+logs/
+!logs/
+logs/*
 !logs/.gitkeep

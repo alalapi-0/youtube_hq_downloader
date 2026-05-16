@@ -104,6 +104,44 @@ python -m src.main export \
 
 参阅 `examples/output_sample/export/`、`examples/search_plan.example.yaml`。
 
+### URL 分析与人工反馈闭环
+
+新增闭环模块用于：URL 页面元数据分析 → 结构化审核表 → 人工打标签 → 反馈统计 → 下一轮搜索策略。默认不下载视频、不读取 Cookie；Cookie 仅在用户显式传入 `--cookie-file` 或 `--cookies-from-browser` 时启用。
+
+```bash
+# 1) 离线分析示例 URL，不访问 YouTube
+.venv/bin/python -m src.main analyze-url \
+  --input examples/candidates.example.jsonl \
+  --output data/url_analysis/url_analysis.jsonl \
+  --offline true
+
+# 2) 导入填写后的人工审核表
+python -m src.main import-review \
+  --analysis data/url_analysis/url_analysis.jsonl \
+  --review-csv output/review/review_sheet_filled.example.csv \
+  --output data/manual_reviews/manual_reviewed.jsonl
+
+# 3) 统计反馈并生成规则版下一轮策略
+python -m src.main analyze-feedback \
+  --input data/manual_reviews/manual_reviewed.jsonl \
+  --output-md output/strategy/feedback_analysis.md \
+  --output-json data/feedback_analysis/feedback_analysis.json
+
+python -m src.main strategy-from-feedback \
+  --feedback-json data/feedback_analysis/feedback_analysis.json \
+  --reviewed-jsonl data/manual_reviews/manual_reviewed.jsonl \
+  --output-md output/strategy/rule_based_next_search_strategy.md \
+  --output-yaml output/strategy/rule_based_next_search_plan.yaml
+```
+
+控制台入口：`python -m src.console` → `12. URL 分析与人工反馈闭环`。
+
+详细说明见：
+
+- `docs/url_analysis_module.md`
+- `docs/cookie_usage_guide.md`
+- `docs/review_feedback_loop.md`
+
 ### LLM / 过滤器细节
 
 | 文档 | 内容 |
