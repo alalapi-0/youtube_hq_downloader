@@ -55,6 +55,23 @@ class OfflineSmoke(unittest.TestCase):
             self.assertTrue((latest / "review_sheet.csv").exists())
             self.assertTrue((latest / "run_summary.md").exists())
 
+    def test_product_pipeline_cleans_malformed_terminal_unicode(self) -> None:
+        from src.core.pipeline import run_new_task
+        from src.core.task import PipelineOptions
+
+        result = run_new_task(
+            "我要找奢侈品广告\udce3，要求 4K",
+            PipelineOptions(
+                ai_enabled=False,
+                offline_candidates_path=ROOT / "examples" / "sample_candidates.jsonl",
+                skip_format_probe=True,
+                max_results_per_query=1,
+            ),
+        )
+        text = (result.task_dir / "user_request.txt").read_text(encoding="utf-8")
+        self.assertIn("我要找奢侈品广告", text)
+        self.assertNotIn("\udce3", text)
+
     def test_ytdlp_search_fallback_parses_entries(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             bin_dir = Path(d) / "bin"

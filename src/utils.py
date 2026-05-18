@@ -9,6 +9,26 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def clean_text(value: Any) -> str:
+    """
+    Replace malformed terminal/copy-paste Unicode so UTF-8 writes never crash.
+    """
+    text = str(value or "")
+    return text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+
+
+def clean_for_serialization(value: Any) -> Any:
+    if isinstance(value, str):
+        return clean_text(value)
+    if isinstance(value, list):
+        return [clean_for_serialization(x) for x in value]
+    if isinstance(value, tuple):
+        return [clean_for_serialization(x) for x in value]
+    if isinstance(value, dict):
+        return {clean_text(k): clean_for_serialization(v) for k, v in value.items()}
+    return value
+
+
 def workspace_path(*parts: str) -> Path:
     return PROJECT_ROOT.joinpath(*parts)
 
@@ -30,7 +50,7 @@ def write_jsonl(path: Path | str, records: Iterable[Dict[str, Any]]) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("w", encoding="utf-8") as f:
         for r in records:
-            f.write(json.dumps(r, ensure_ascii=False))
+            f.write(json.dumps(clean_for_serialization(r), ensure_ascii=False))
             f.write("\n")
 
 
@@ -105,7 +125,7 @@ def flatten_brand_names(brand_cfg: Dict[str, Any]) -> List[str]:
 
 
 def sniff_description(description: str, limit: int = 240) -> str:
-    t = " ".join((description or "").split())
+    t = " ".join(clean_text(description).split())
     if len(t) <= limit:
         return t
     return t[:limit] + "…"

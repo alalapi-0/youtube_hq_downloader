@@ -13,7 +13,7 @@ from ..cookie_loader import load_cookie_settings
 from ..llm.feedback_analyzer import analyze_feedback_with_openrouter
 from ..llm.planner import generate_search_plan
 from ..llm.semantic_filter import semantic_filter_candidates
-from ..utils import PROJECT_ROOT, coerce_candidate, read_jsonl, write_jsonl
+from ..utils import PROJECT_ROOT, clean_for_serialization, clean_text, coerce_candidate, read_jsonl, write_jsonl
 from .config import FILTERS_CONFIG_PATH, LABELS_CONFIG_PATH, load_app_config, openrouter_api_key, url_analysis_compat_config, youtube_api_key
 from .paths import create_task_dir, task_paths, write_latest_task
 from .task import PipelineOptions, PipelineResult
@@ -21,7 +21,7 @@ from .task import PipelineOptions, PipelineResult
 
 def _write_yaml(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(clean_for_serialization(data), allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
 def _read_rows(path: Path) -> List[Dict[str, Any]]:
@@ -111,11 +111,13 @@ def _summary_markdown(summary: Dict[str, Any]) -> str:
 
 
 def _write_summary(paths: Dict[str, Path], summary: Dict[str, Any]) -> None:
-    paths["run_summary_json"].write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    paths["run_summary_md"].write_text(_summary_markdown(summary), encoding="utf-8")
+    clean_summary = clean_for_serialization(summary)
+    paths["run_summary_json"].write_text(json.dumps(clean_summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    paths["run_summary_md"].write_text(clean_text(_summary_markdown(clean_summary)), encoding="utf-8")
 
 
 def run_new_task(user_request: str, options: PipelineOptions | None = None) -> PipelineResult:
+    user_request = clean_text(user_request).strip()
     options = options or PipelineOptions()
     task_dir = create_task_dir(options.task_id)
     paths = task_paths(task_dir)
@@ -127,7 +129,7 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
     if cookie_settings.enabled and cookie_settings.warning:
         warnings.append(cookie_settings.warning)
 
-    paths["user_request"].write_text(user_request.strip() + "\n", encoding="utf-8")
+    paths["user_request"].write_text(user_request + "\n", encoding="utf-8")
 
     ai_requested = options.ai_enabled and bool((load_app_config().get("llm") or {}).get("enabled", True))
     if ai_requested and not openrouter_api_key():

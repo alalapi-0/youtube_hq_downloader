@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 import yaml
 
 from ..core.config import load_app_config
-from ..utils import PROJECT_ROOT, load_yaml_mapping
+from ..utils import PROJECT_ROOT, clean_text, load_yaml_mapping
 from .openrouter_client import OpenRouterClient, OpenRouterError
 from .prompts import PLANNER_SYSTEM
 
@@ -32,6 +32,7 @@ def _brand_names() -> List[str]:
 
 
 def fallback_search_plan(user_request: str, *, warning: str = "") -> Dict[str, Any]:
+    user_request = clean_text(user_request)
     app = load_app_config()
     yt = app.get("youtube") or {}
     tasks = app.get("tasks") or {}
@@ -99,6 +100,7 @@ def fallback_search_plan(user_request: str, *, warning: str = "") -> Dict[str, A
 
 
 def generate_search_plan(user_request: str, *, use_ai: bool = True) -> Tuple[Dict[str, Any], List[str]]:
+    user_request = clean_text(user_request)
     warnings: List[str] = []
     client = OpenRouterClient()
     if not use_ai:

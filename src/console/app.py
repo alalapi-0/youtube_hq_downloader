@@ -14,7 +14,7 @@ from ..core.pipeline import import_feedback_for_task, run_new_task
 from ..core.task import PipelineOptions
 from ..env_loader import load_dotenv
 from ..llm.planner import generate_search_plan
-from ..utils import PROJECT_ROOT
+from ..utils import PROJECT_ROOT, clean_text
 
 
 def _print(text: str = "") -> None:
@@ -107,7 +107,7 @@ def _read_user_request() -> str:
         if not line.strip():
             break
         lines.append(line.rstrip())
-    return "\n".join(lines).strip()
+    return clean_text("\n".join(lines)).strip()
 
 
 def _plan_summary(plan: Dict[str, Any]) -> str:

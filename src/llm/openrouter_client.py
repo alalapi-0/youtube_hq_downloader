@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List
 
 from ..core.config import openrouter_api_key, openrouter_config
 from ..llm_cache import CacheParams, cache_fingerprint, read_cache, write_cache
-from ..utils import PROJECT_ROOT
+from ..utils import PROJECT_ROOT, clean_for_serialization
 
 
 class OpenRouterError(RuntimeError):
@@ -51,6 +51,7 @@ class OpenRouterClient:
             "temperature": self.temperature if temperature is None else float(temperature),
         }
         body["max_tokens"] = self.max_tokens if max_tokens is None else int(max_tokens)
+        body = clean_for_serialization(body)
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
@@ -65,7 +66,10 @@ class OpenRouterClient:
 
             resp = requests.post(url, headers=headers, json=body, timeout=120)
             if not resp.ok:
-                raise OpenRouterError(f"OpenRouter HTTP {resp.status_code}: {resp.text[:500]}")
+                detail = resp.text[:500]
+                if resp.status_code == 401:
+                    raise OpenRouterError("OpenRouter API Key 无效或账号不可用，请重新检查 OPENROUTER_API_KEY。")
+                raise OpenRouterError(f"OpenRouter HTTP {resp.status_code}: {detail}")
             parsed = resp.json()
         except ImportError:
             req = urllib.request.Request(url=url, data=data, headers=headers, method="POST")
@@ -74,6 +78,8 @@ class OpenRouterClient:
                     parsed = json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace")
+                if exc.code == 401:
+                    raise OpenRouterError("OpenRouter API Key 无效或账号不可用，请重新检查 OPENROUTER_API_KEY。") from exc
                 raise OpenRouterError(f"OpenRouter HTTP {exc.code}: {detail[:500]}") from exc
         except OpenRouterError:
             raise
