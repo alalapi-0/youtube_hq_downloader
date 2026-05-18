@@ -85,8 +85,6 @@ def url_analysis_compat_config() -> Dict[str, Any]:
     review = app.get("review") or {}
     return {
         "url_analysis": {
-            "use_youtube_api": False,
-            "use_ytdlp_metadata": False,
             "use_webpage_metadata": False,
             "max_description_chars": 1500,
             "include_thumbnails": True,

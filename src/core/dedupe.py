@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
-from ..utils import extract_video_id, read_jsonl
+from ..utils import read_jsonl
 from .paths import output_root
 
 
@@ -16,19 +16,7 @@ def canonical_url_key(url: str) -> str:
     raw = str(url or "").strip()
     if not raw:
         return ""
-    yt = extract_video_id(raw)
-    if yt:
-        return f"youtube:{yt}"
     parsed = urlparse(raw)
-    host = parsed.netloc.lower().removeprefix("www.")
-    if host in ("youtube.com", "m.youtube.com"):
-        vid = (parse_qs(parsed.query).get("v") or [""])[0]
-        if vid:
-            return f"youtube:{vid}"
-    if host == "youtu.be":
-        vid = parsed.path.strip("/").split("/")[0]
-        if vid:
-            return f"youtube:{vid}"
     m = VIMEO_ID_PATTERN.search(raw)
     if m:
         return f"vimeo:{m.group(1)}"

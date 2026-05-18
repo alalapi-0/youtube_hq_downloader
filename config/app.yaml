@@ -4,10 +4,9 @@ app:
   description: OpenRouter Web Search 广告视频 URL 寻源工具
   mode: web_search_only
   language: zh
-
 llm:
   enabled: true
-  model: google/gemini-2.5-flash
+  model: x-ai/grok-4.3
   api_key_env: OPENROUTER_API_KEY
   base_url: https://openrouter.ai/api/v1
   temperature: 0.2
@@ -16,20 +15,24 @@ llm:
   cache_dir: cache/llm
   prompt_version: ad-url-scout-v1
   max_items_per_batch: 20
-
 web_search:
   enabled: true
   engine: parallel
   allowed_domains:
-    - vimeo.com
-    - youtube.com
-    - youtu.be
+  - vimeo.com
   max_results: 8
   max_total_results: 40
   search_context_size: medium
   target_url_count: 40
   max_output_tokens: 6000
-
+hard_constraints:
+  require_4k: true
+  min_height: 2160
+  max_duration_seconds: 60
+  published_within_days: 730
+  reject_if_missing_4k_evidence: true
+  reject_if_missing_duration: true
+  reject_if_missing_publish_date: true
 tasks:
   output_root: output/tasks
   default_category: campaigns
@@ -37,11 +40,9 @@ tasks:
   review_sheet_name: review_sheet.csv
   markdown_review_name: review_sheet.md
   offline_mode: false
-
 review:
   min_sample_size_for_strategy: 20
   high_pass_rate_threshold: 0.4
   low_pass_rate_threshold: 0.1
   min_count_for_keyword_stats: 3
-
 advanced: {}

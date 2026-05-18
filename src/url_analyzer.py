@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 import isodate
 
 from .review_schema import default_manual_review
-from .utils import extract_video_id, read_jsonl, sniff_description, watch_url, write_jsonl
+from .utils import read_jsonl, sniff_description, write_jsonl
 
 
 REVIEW_COLUMNS = [
@@ -121,17 +121,13 @@ def _best_url(row: Dict[str, Any]) -> str:
         value = str(row.get(key) or "").strip()
         if value:
             return value
-    vid = str(row.get("video_id") or "").strip()
-    return watch_url(vid) if vid else ""
+    return ""
 
 
 def _video_id(row: Dict[str, Any], url: str) -> str:
     explicit = str(row.get("video_id") or "").strip()
     if explicit:
         return explicit
-    youtube_id = extract_video_id(url)
-    if youtube_id:
-        return youtube_id
     match = VIMEO_ID_PATTERN.search(url or "")
     return match.group(1) if match else ""
 
@@ -192,7 +188,7 @@ def _empty_webpage_metadata() -> Dict[str, Any]:
 def _analysis_template(row: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     raw_url = _best_url(row)
     vid = _video_id(row, raw_url)
-    video_url = raw_url or (watch_url(vid) if vid and len(vid) == 11 else "")
+    video_url = raw_url
     errors: List[str] = []
     if not video_url:
         errors.append("invalid_url")
@@ -229,7 +225,7 @@ def _analysis_template(row: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, An
     return {
         "video_url": video_url,
         "video_id": vid,
-        "source_platform": str(row.get("source_platform") or ("vimeo" if "vimeo.com" in video_url.lower() else "youtube" if "youtu" in video_url.lower() else "")),
+        "source_platform": "vimeo" if "vimeo.com" in video_url.lower() else str(row.get("source_platform") or ""),
         "title": str(row.get("title") or ""),
         "channel_title": str(row.get("channel_title") or ""),
         "channel_id": str(row.get("channel_id") or ""),
@@ -255,6 +251,10 @@ def _analysis_template(row: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, An
             "max_format_height": max_height,
             "has_2160p_format": has_2160,
             "format_probe_status": str(row.get("format_probe_status") or "not_requested"),
+        },
+        "hard_constraints": {
+            "passed": row.get("hard_constraint_passed"),
+            "reject_reasons": _as_list(row.get("hard_constraint_reject_reasons")),
         },
         "source_context": {
             "query_used": _source_query(row),

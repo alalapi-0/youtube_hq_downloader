@@ -10,7 +10,7 @@ python3 run.py
 
 ```bash
 python3 -m src.main run-task \
-  --request "我要找高端奢侈品官方广告，要求 4K，排除 review 和 unboxing" \
+  --request "我要找 Vimeo 上的高端奢侈品官方广告，要求 4K，60 秒以内，发布时间两年内，排除 review 和 unboxing" \
   --max-results 40
 
 python3 -m src.main import-task-feedback \

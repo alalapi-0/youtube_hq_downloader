@@ -5,7 +5,7 @@
 ```text
 自然语言需求
   -> OpenRouter Web Search 查找真实视频 URL
-  -> 只保留 Vimeo / YouTube 视频页 URL
+  -> 只保留 Vimeo 视频页 URL
   -> 本地查重
   -> 生成结构化 URL 记录
   -> 导出人工审核表
@@ -14,7 +14,18 @@
   -> 生成下一轮搜索建议
 ```
 
-系统不下载视频文件，也不再使用本地脚本或 yt-dlp 作为搜索兜底。搜索 URL 的唯一在线能力来自 OpenRouter Web Search。
+系统不下载视频文件，也不再使用本地脚本或 yt-dlp 作为搜索兜底。搜索 URL 的唯一在线能力来自 OpenRouter Web Search，且当前只允许 `vimeo.com` 视频页进入结果。
+
+## 硬性条件
+
+候选 URL 进入人工审核表前会经过硬闸门：
+
+- 必须是 `vimeo.com` 视频页
+- 必须有 4K / 2160p / UHD 证据
+- 必须能确认时长不超过 60 秒
+- 必须能确认发布时间在最近两年内
+
+缺少任一证据时会被丢弃，原因会写入任务目录的 `rejected.jsonl` 和 `run_summary.md`。
 
 ## 任务目录
 

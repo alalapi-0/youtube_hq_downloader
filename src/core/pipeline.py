@@ -9,8 +9,9 @@ import yaml
 
 from .. import review_feedback_analyzer, review_schema, search_strategy_from_feedback, url_analyzer
 from ..core.dedupe import dedupe_records
+from ..core.hard_constraints import apply_hard_constraints, hard_constraints_from_config
 from ..llm.feedback_analyzer import analyze_feedback_with_openrouter
-from ..llm.web_url_scout import scout_urls_with_openrouter
+from ..llm.web_url_scout import is_vimeo_video_url, scout_urls_with_openrouter
 from ..llm.openrouter_client import OpenRouterError
 from ..utils import clean_for_serialization, clean_text, coerce_candidate, read_jsonl, write_jsonl
 from .config import LABELS_CONFIG_PATH, load_app_config, openrouter_api_key, url_analysis_compat_config
@@ -27,6 +28,21 @@ def _read_rows(path: Path) -> List[Dict[str, Any]]:
     return [coerce_candidate(r) for r in read_jsonl(path)]
 
 
+def _row_url(row: Dict[str, Any]) -> str:
+    return str(row.get("canonical_url") or row.get("video_url") or row.get("url") or "")
+
+
+def _keep_vimeo_only(rows: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], int]:
+    kept: List[Dict[str, Any]] = []
+    dropped = 0
+    for row in rows:
+        if is_vimeo_video_url(_row_url(row)):
+            kept.append(row)
+        else:
+            dropped += 1
+    return kept, dropped
+
+
 def _summary_markdown(summary: Dict[str, Any]) -> str:
     lines = [
         "# 任务摘要",
@@ -34,6 +50,7 @@ def _summary_markdown(summary: Dict[str, Any]) -> str:
         f"- 任务 ID：`{summary['task_id']}`",
         f"- 创建时间：{summary['created_at']}",
         f"- AI Web Search 找到 URL：{summary['total_candidates']}",
+        f"- 硬性条件丢弃：{summary.get('hard_constraint_rejected_count', 0)}",
         f"- 本地查重后保留：{summary['final_count']}",
         f"- 本地重复/无效：{summary.get('duplicate_count', 0)}",
         f"- 需要人工审核：{summary['final_count']}",
@@ -69,6 +86,8 @@ def _write_summary(paths: Dict[str, Path], summary: Dict[str, Any]) -> None:
 def run_new_task(user_request: str, options: PipelineOptions | None = None) -> PipelineResult:
     user_request = clean_text(user_request).strip()
     options = options or PipelineOptions()
+    app_config = load_app_config()
+    hard_constraints = hard_constraints_from_config(app_config)
     task_dir = create_task_dir(options.task_id)
     paths = task_paths(task_dir)
     warnings: List[str] = []
@@ -82,7 +101,8 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         "project": {"name": "ad-url-scout"},
         "mode": "openrouter_web_search_only",
         "user_request": user_request,
-        "web_search": load_app_config().get("web_search") or {},
+        "web_search": app_config.get("web_search") or {},
+        "hard_constraints": hard_constraints,
     }
     if options.max_results_per_query:
         search_plan.setdefault("web_search", {})["target_url_count"] = int(options.max_results_per_query)
@@ -108,9 +128,22 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
             errors.append(f"OpenRouter Web Search 寻源失败：{type(exc).__name__}: {exc}")
 
     found_rows = [coerce_candidate(r) for r in found_rows]
+    found_rows, non_vimeo_dropped = _keep_vimeo_only(found_rows)
+    if non_vimeo_dropped:
+        warnings.append(f"已丢弃 {non_vimeo_dropped} 条非 Vimeo URL。当前版本只保留 vimeo.com 视频页。")
     write_jsonl(paths["llm_found_urls"], found_rows)
 
-    unique_rows, duplicate_rows, dedupe_stats = dedupe_records(found_rows, exclude_task_dir=task_dir)
+    constrained_rows, hard_rejected_rows, hard_stats = apply_hard_constraints(
+        found_rows,
+        hard_constraints,
+    )
+    if hard_rejected_rows:
+        warnings.append(
+            "已按硬性条件丢弃 "
+            f"{len(hard_rejected_rows)} 条：必须 Vimeo、4K/2160p/UHD、60 秒以内、发布时间两年内。"
+        )
+
+    unique_rows, duplicate_rows, dedupe_stats = dedupe_records(constrained_rows, exclude_task_dir=task_dir)
     write_jsonl(paths["candidates_raw"], unique_rows)
     write_jsonl(paths["duplicates"], duplicate_rows)
     paths["dedupe_report"].write_text(json.dumps(dedupe_stats, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -124,7 +157,7 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
 
     write_jsonl(paths["rule_filtered"], analysis_rows)
     write_jsonl(paths["llm_filtered"], analysis_rows)
-    write_jsonl(paths["rejected"], duplicate_rows)
+    write_jsonl(paths["rejected"], [*hard_rejected_rows, *duplicate_rows])
     write_jsonl(paths["final_candidates"], analysis_rows)
 
     url_analyzer.export_review_sheet(
@@ -146,7 +179,10 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         "llm_pass_count": len(unique_rows),
         "final_count": len(unique_rows),
         "duplicate_count": len(duplicate_rows),
-        "rejected_count": len(duplicate_rows),
+        "non_vimeo_dropped": non_vimeo_dropped,
+        "hard_constraint_rejected_count": len(hard_rejected_rows),
+        "hard_constraint_reject_stats": hard_stats,
+        "rejected_count": len(hard_rejected_rows) + len(duplicate_rows),
         "review_sheet_csv": str(paths["review_sheet_csv"]),
         "review_sheet_md": str(paths["review_sheet_md"]),
         "final_candidates_path": str(paths["final_candidates"]),

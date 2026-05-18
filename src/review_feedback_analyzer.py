@@ -145,7 +145,7 @@ def _tokenize_keywords(row: Dict[str, Any]) -> List[str]:
     tokens: List[str] = []
     for part in parts:
         for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9-]{2,}", str(part).lower()):
-            if token in {"the", "and", "for", "with", "official", "youtube", "video"}:
+            if token in {"the", "and", "for", "with", "official", "video"}:
                 continue
             tokens.append(token)
     return tokens

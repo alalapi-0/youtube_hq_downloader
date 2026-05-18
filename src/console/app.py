@@ -85,7 +85,7 @@ def show_main_menu() -> None:
 
 def _read_user_request() -> str:
     _print("请用自然语言描述你要找什么视频。")
-    _print("例如：我要找高端奢侈品官方广告，优先 Dior、Prada、Chanel、Gucci，要求 4K，排除 AI、review、unboxing、vlog，时长 20 到 180 秒。")
+    _print("例如：我要找 Vimeo 上的高端奢侈品官方广告，优先 Dior、Prada、Chanel、Gucci，要求 4K，60 秒以内，发布时间两年内，排除 AI、review、unboxing、vlog。")
     _print("输入完成后按 Enter；如果要多行输入，最后单独输入 END。")
     first = input("> ").rstrip()
     if first.strip().upper() != "END":
@@ -126,7 +126,7 @@ def start_new_task() -> Path | None:
     target_raw = _prompt("希望本轮最多保留多少个去重 URL", default_count)
     target = int(target_raw) if target_raw.isdigit() else int(default_count)
     _print("")
-    _print("即将通过 OpenRouter Web Search 搜索 Vimeo / YouTube 视频 URL，并做本地查重。")
+    _print("即将通过 OpenRouter Web Search 只搜索 Vimeo 视频 URL，并做本地查重。")
     result = run_new_task(
         user_request,
         PipelineOptions(ai_enabled=True, max_results_per_query=target),
@@ -134,6 +134,7 @@ def start_new_task() -> Path | None:
     _print("")
     _print("任务完成：")
     _print(f"AI 找到 URL：{result.summary['total_candidates']}")
+    _print(f"硬性条件丢弃：{result.summary.get('hard_constraint_rejected_count', 0)}")
     _print(f"本地查重保留：{result.summary['final_count']}")
     _print(f"重复/无效 URL：{result.summary.get('duplicate_count', 0)}")
     _print(f"需要人工审核：{result.summary['final_count']}")
