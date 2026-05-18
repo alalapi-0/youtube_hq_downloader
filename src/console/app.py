@@ -117,10 +117,12 @@ def _plan_summary(plan: Dict[str, Any]) -> str:
     for task in tasks:
         brands.extend(str(x) for x in (task.get("brands") or []) if str(x).strip())
         keywords.extend(str(x) for x in (task.get("keywords") or []) if str(x).strip())
-    neg = ((plan.get("positive_negative_keywords") or {}).get("suggested_negative_keywords") or [])
-    dur = plan.get("duration") or {}
-    res = plan.get("resolution") or {}
-    cap = int((plan.get("global_rules") or {}).get("max_results_per_keyword") or 10)
+    pn = plan.get("positive_negative_keywords") if isinstance(plan.get("positive_negative_keywords"), dict) else {}
+    neg = (pn.get("suggested_negative_keywords") or [])
+    dur = plan.get("duration") if isinstance(plan.get("duration"), dict) else {}
+    res = plan.get("resolution") if isinstance(plan.get("resolution"), dict) else {}
+    glob = plan.get("global_rules") if isinstance(plan.get("global_rules"), dict) else {}
+    cap = int(glob.get("max_results_per_keyword") or 10)
     estimate = max(1, len(keywords)) * max(1, cap) * max(1, len(brands) or 1)
     return "\n".join(
         [

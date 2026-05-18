@@ -72,6 +72,32 @@ class OfflineSmoke(unittest.TestCase):
         self.assertIn("我要找奢侈品广告", text)
         self.assertNotIn("\udce3", text)
 
+    def test_planner_normalizes_string_fields_from_llm(self) -> None:
+        from src.console.app import _plan_summary
+        from src.llm.planner import normalize_search_plan
+
+        plan = normalize_search_plan(
+            {
+                "duration": "10 到 180 秒",
+                "resolution": "4K / 2160p required",
+                "positive_negative_keywords": "review, unboxing, vlog",
+                "tasks": [
+                    {
+                        "id": "main",
+                        "category": "campaigns",
+                        "keywords": "luxury product film, official commercial",
+                        "brands": "Dior, Prada",
+                    }
+                ],
+            },
+            "我要找高端奢侈品官方广告，时长10到180秒，画质要求4k",
+        )
+        self.assertEqual(plan["duration"]["min_seconds"], 10)
+        self.assertEqual(plan["duration"]["max_seconds"], 180)
+        self.assertTrue(plan["resolution"]["require_4k"])
+        self.assertEqual(plan["tasks"][0]["brands"], ["Dior", "Prada"])
+        self.assertIn("清晰度：优先 2160p / 4K", _plan_summary(plan))
+
     def test_ytdlp_search_fallback_parses_entries(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             bin_dir = Path(d) / "bin"
