@@ -9,8 +9,6 @@ from ..utils import PROJECT_ROOT, load_yaml_mapping
 
 
 APP_CONFIG_PATH = PROJECT_ROOT / "config" / "app.yaml"
-FILTERS_CONFIG_PATH = PROJECT_ROOT / "config" / "filters.yaml"
-BRANDS_CONFIG_PATH = PROJECT_ROOT / "config" / "brands.yaml"
 LABELS_CONFIG_PATH = PROJECT_ROOT / "config" / "labels.yaml"
 
 
@@ -22,7 +20,7 @@ def load_app_config(path: Path | str = APP_CONFIG_PATH) -> Dict[str, Any]:
     data = load_yaml_mapping(path) if Path(path).exists() else {}
     data.setdefault("app", {})
     data.setdefault("llm", {})
-    data.setdefault("youtube", {})
+    data.setdefault("web_search", {})
     data.setdefault("tasks", {})
     data.setdefault("review", {})
     data.setdefault("advanced", {})
@@ -39,12 +37,6 @@ def _usable_key(value: str) -> str:
 def openrouter_api_key() -> str:
     load_env()
     env_name = str((load_app_config().get("llm") or {}).get("api_key_env") or "OPENROUTER_API_KEY")
-    return _usable_key(os.environ.get(env_name, ""))
-
-
-def youtube_api_key() -> str:
-    load_env()
-    env_name = str((load_app_config().get("youtube") or {}).get("api_key_env") or "YOUTUBE_API_KEY")
     return _usable_key(os.environ.get(env_name, ""))
 
 
@@ -90,18 +82,16 @@ def llm_compat_config() -> Dict[str, Any]:
 
 def url_analysis_compat_config() -> Dict[str, Any]:
     app = load_app_config()
-    yt = app.get("youtube") or {}
     review = app.get("review") or {}
     return {
         "url_analysis": {
-            "use_youtube_api": bool(yt.get("use_youtube_api", True)),
-            "use_ytdlp_metadata": bool(yt.get("use_ytdlp_metadata", True)),
-            "use_webpage_metadata": bool(yt.get("use_webpage_metadata", True)),
-            "use_cookie": False,
+            "use_youtube_api": False,
+            "use_ytdlp_metadata": False,
+            "use_webpage_metadata": False,
             "max_description_chars": 1500,
             "include_thumbnails": True,
             "include_tags": True,
-            "include_format_info": bool(yt.get("use_format_probe", True)),
+            "include_format_info": False,
             "skip_unavailable": False,
         },
         "review_export": {
@@ -120,15 +110,9 @@ def url_analysis_compat_config() -> Dict[str, Any]:
 
 
 def product_status() -> Dict[str, Any]:
-    import shutil
-
     cfg = load_app_config()
-    adv = cfg.get("advanced") or {}
     return {
         "openrouter_configured": bool(openrouter_api_key()),
-        "youtube_api_configured": bool(youtube_api_key()),
-        "ytdlp_available": bool(shutil.which("yt-dlp")),
-        "cookie_mode": "browser" if adv.get("cookies_from_browser") else ("file" if adv.get("cookie_file") else "off"),
-        "cookie_browser": str(adv.get("cookies_from_browser") or ""),
+        "web_search": cfg.get("web_search") or {},
         "app": cfg.get("app") or {},
     }

@@ -1,3 +1,12 @@
+## [4.0.0] - 2026-05-18
+
+### Changed
+
+- 主流程收敛为 OpenRouter Web Search URL 寻源 + 本地查重 + 人工审核表。
+- 当前入口不再提供拆分式旧搜索链路。
+- 配置进一步精简为 `config/app.yaml` 和 `config/labels.yaml`。
+- 旧搜索、补全、过滤、导出和示例迁移到 `legacy/`。
+
 ## [3.0.0] - 2026-05-16
 
 ### Changed

@@ -40,6 +40,8 @@ class OpenRouterClient:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        tools: List[Dict[str, Any]] | None = None,
+        extra_body: Dict[str, Any] | None = None,
     ) -> str:
         if not self.api_key:
             raise OpenRouterError(
@@ -51,6 +53,10 @@ class OpenRouterClient:
             "temperature": self.temperature if temperature is None else float(temperature),
         }
         body["max_tokens"] = self.max_tokens if max_tokens is None else int(max_tokens)
+        if tools:
+            body["tools"] = tools
+        if extra_body:
+            body.update(extra_body)
         body = clean_for_serialization(body)
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers = {

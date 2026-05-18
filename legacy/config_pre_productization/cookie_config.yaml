@@ -1,7 +1,0 @@
-cookie:
-  enabled: false
-  mode: none
-  cookie_file: ""
-  browser: chrome
-  cookies_from_browser: false
-  never_log_cookie_content: true

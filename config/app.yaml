@@ -1,13 +1,12 @@
 app:
   name: ad-url-scout
   title: Ad URL Scout
-  description: AI 增强广告视频 URL 寻源工具
-  mode: ai_first
+  description: OpenRouter Web Search 广告视频 URL 寻源工具
+  mode: web_search_only
   language: zh
 
 llm:
   enabled: true
-  provider: openrouter
   model: google/gemini-2.5-flash
   api_key_env: OPENROUTER_API_KEY
   base_url: https://openrouter.ai/api/v1
@@ -18,15 +17,18 @@ llm:
   prompt_version: ad-url-scout-v1
   max_items_per_batch: 20
 
-youtube:
-  api_key_env: YOUTUBE_API_KEY
-  use_youtube_api: true
-  use_ytdlp_metadata: true
-  use_format_probe: true
-  use_webpage_metadata: true
-  default_region_code: US
-  default_relevance_language: en
-  default_max_results_per_query: 10
+web_search:
+  enabled: true
+  engine: parallel
+  allowed_domains:
+    - vimeo.com
+    - youtube.com
+    - youtu.be
+  max_results: 8
+  max_total_results: 40
+  search_context_size: medium
+  target_url_count: 40
+  max_output_tokens: 6000
 
 tasks:
   output_root: output/tasks
@@ -42,8 +44,4 @@ review:
   low_pass_rate_threshold: 0.1
   min_count_for_keyword_stats: 3
 
-advanced:
-  use_cookie: false
-  cookie_file: ""
-  cookies_from_browser: ""
-  never_log_cookie_content: true
+advanced: {}

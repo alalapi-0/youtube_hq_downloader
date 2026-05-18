@@ -22,4 +22,4 @@ llm:
   model: google/gemini-2.5-flash
 ```
 
-如果没有配置 Key，程序不会崩溃，会提示使用规则模式继续，但 AI 搜索计划和语义复筛不可用。
+如果没有配置 Key，程序不会崩溃，但不会执行在线 URL 寻源任务。当前版本的 URL 搜索只依赖 OpenRouter Web Search。

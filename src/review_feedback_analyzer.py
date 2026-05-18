@@ -6,9 +6,6 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
-import yaml
-
-from .llm_client import ChatMessage, openai_compatible_chat_completion, require_non_empty_api_key
 from .review_schema import reviewed_rows
 from .utils import PROJECT_ROOT, load_yaml_mapping, read_jsonl
 
@@ -255,7 +252,6 @@ def analyze_feedback_records(
     stats["recommended_next_directions"] = _recommend_from_stats(stats)
     return stats
 
-
 def _recommend_from_stats(stats: Dict[str, Any]) -> List[str]:
     recs: List[str] = []
     summary = stats.get("summary") or {}
@@ -346,122 +342,3 @@ def analyze_feedback_file(
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text(render_feedback_markdown(stats), encoding="utf-8")
     return stats
-
-
-def _llm_payload(rows: List[Dict[str, Any]], stats: Dict[str, Any]) -> Dict[str, Any]:
-    examples: List[Dict[str, Any]] = []
-    for row in reviewed_rows(rows)[:80]:
-        manual = _manual(row)
-        examples.append(
-            {
-                "video_id": row.get("video_id"),
-                "title": row.get("title"),
-                "channel_title": row.get("channel_title"),
-                "brand": row.get("brand") or _source(row).get("brand"),
-                "query_used": _source(row).get("query_used"),
-                "status": manual.get("status"),
-                "passed": manual.get("passed"),
-                "reject_reasons": manual.get("reject_reasons") or [],
-                "pass_features": manual.get("pass_features") or [],
-                "duration_seconds": row.get("duration_seconds"),
-                "max_format_height": _fmt(row).get("max_format_height"),
-                "description_snippet": str(row.get("description_snippet") or "")[:180],
-            }
-        )
-    return {"statistics": stats, "review_examples_truncated": examples}
-
-
-def _fallback_llm_outputs(rows: List[Dict[str, Any]], stats: Dict[str, Any], reason: str) -> Tuple[str, Dict[str, Any]]:
-    from .search_strategy_from_feedback import build_rule_based_plan
-
-    plan = build_rule_based_plan(stats, rows)
-    summary = stats.get("summary") or {}
-    md = "\n".join(
-        [
-            "# LLM feedback strategy",
-            "",
-            f"- LLM status: `{reason}`",
-            f"- sample_size_too_small: `{bool(summary.get('sample_size_too_small'))}`",
-            f"- reviewed: `{summary.get('total_reviewed', 0)}`",
-            f"- current_pass_rate: `{summary.get('pass_rate', 0)}`",
-            "",
-            "## 依据来自哪些统计结果",
-            "- `summary`",
-            "- `by_query_used`",
-            "- `by_brand`",
-            "- `by_channel_title`",
-            "- `common_reject_reasons`",
-            "- `common_pass_features`",
-            "- `high_pass_keywords` / `low_pass_keywords`",
-            "",
-            "LLM 未生成高级总结，已输出保守的规则策略 YAML。",
-            "",
-        ]
-    )
-    return md, plan
-
-
-def llm_analyze_feedback_file(
-    *,
-    input_path: Path | str,
-    stats_path: Path | str,
-    output_md: Path | str,
-    output_yaml: Path | str,
-    use_llm: bool,
-    llm_config_path: Path | str = PROJECT_ROOT / "config" / "app.yaml",
-) -> Tuple[str, Dict[str, Any]]:
-    rows = list(read_jsonl(input_path))
-    stats = json.loads(Path(stats_path).read_text(encoding="utf-8")) if Path(stats_path).exists() else analyze_feedback_records(rows)
-    summary = stats.get("summary") or {}
-
-    if not use_llm:
-        md, plan = _fallback_llm_outputs(rows, stats, "skipped_by_user")
-    elif summary.get("sample_size_too_small"):
-        md, plan = _fallback_llm_outputs(rows, stats, "sample_size_too_small")
-    else:
-        if Path(llm_config_path).name == "app.yaml":
-            from .core.config import llm_compat_config
-
-            cfg = llm_compat_config()
-        else:
-            cfg = load_yaml_mapping(llm_config_path)
-        provider = str(cfg.get("provider") or "openrouter")
-        model = str(cfg.get("model") or "gpt-4o-mini")
-        payload = yaml.safe_dump(_llm_payload(rows, stats), allow_unicode=True, sort_keys=False)
-        system = (
-            "You analyze human review feedback for YouTube URL sourcing. "
-            "Use only the supplied review statistics and truncated reviewed examples. "
-            "Do not invent unsupported claims. If evidence is weak, say sample_size_too_small. "
-            "Return YAML with keys: strategy_markdown (markdown string) and search_plan (full search_plan mapping). "
-            "strategy_markdown must include a section named '依据来自哪些统计结果'."
-        )
-        try:
-            base, api_key = require_non_empty_api_key(provider, cfg)
-            raw = openai_compatible_chat_completion(
-                base_url=base,
-                api_key=api_key,
-                model=model,
-                messages=[
-                    ChatMessage("system", system),
-                    ChatMessage("user", "REVIEW_FEEDBACK:\n```yaml\n" + payload + "\n```"),
-                ],
-                temperature=float(cfg.get("temperature") or 0.1),
-                max_tokens=int(cfg.get("max_output_tokens") or 4096),
-            )
-            parsed = yaml.safe_load(raw)
-            if not isinstance(parsed, dict):
-                raise ValueError("LLM did not return a YAML mapping")
-            md = str(parsed.get("strategy_markdown") or raw)
-            plan = parsed.get("search_plan") if isinstance(parsed.get("search_plan"), dict) else {}
-            if not plan:
-                _, plan = _fallback_llm_outputs(rows, stats, "llm_missing_search_plan")
-        except (RuntimeError, ValueError, Exception) as exc:
-            md, plan = _fallback_llm_outputs(rows, stats, f"failed:{type(exc).__name__}")
-
-    out_md = Path(output_md)
-    out_md.parent.mkdir(parents=True, exist_ok=True)
-    out_md.write_text(md if md.endswith("\n") else md + "\n", encoding="utf-8")
-    out_yaml = Path(output_yaml)
-    out_yaml.parent.mkdir(parents=True, exist_ok=True)
-    out_yaml.write_text(yaml.safe_dump(plan, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    return md, plan

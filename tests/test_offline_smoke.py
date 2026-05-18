@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
-import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -12,186 +13,153 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _run(args: list[str], cwd: Path = ROOT) -> None:
+def _run(args: list[str], cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["OPENROUTER_API_KEY"] = ""
-    env["YOUTUBE_API_KEY"] = ""
-    subprocess.run([sys.executable, "-m", "src.main", *args], cwd=cwd, env=env, check=True)
+    return subprocess.run(
+        [sys.executable, "-m", "src.main", *args],
+        cwd=cwd,
+        env=env,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
 
 
 class OfflineSmoke(unittest.TestCase):
-    def test_plan_demo_writes_yaml(self) -> None:
+    def test_product_offline_pipeline_outputs_review_and_dedupe_files(self) -> None:
+        now = str(time.time_ns())[-10:]
+        vid1 = f"a{now}"
+        vid2 = f"b{now}"
         with tempfile.TemporaryDirectory() as d:
-            outp = Path(d) / "plan.yaml"
-            _run(["plan", "--input", "examples/search_tasks.demo.yaml", "--output", str(outp), "--use-llm", "false"])
-            text = outp.read_text(encoding="utf-8")
-            self.assertTrue(outp.exists())
-            self.assertIn("tasks:", text)
-
-    def test_product_offline_pipeline(self) -> None:
-        with tempfile.TemporaryDirectory() as d:
-            task_id = "task_20990101_001"
+            candidates = Path(d) / "candidates.jsonl"
+            _write_jsonl(
+                candidates,
+                [
+                    {
+                        "video_url": f"https://www.youtube.com/watch?v={vid1}",
+                        "canonical_url": f"https://www.youtube.com/watch?v={vid1}",
+                        "title": "Luxury perfume product film 4K macro studio commercial",
+                        "channel_title": "Luxury Official",
+                        "brand": "Test Brand",
+                        "query_used": "luxury product film 4k",
+                    },
+                    {
+                        "video_url": f"https://www.youtube.com/watch?v={vid1}",
+                        "canonical_url": f"https://www.youtube.com/watch?v={vid1}",
+                        "title": "Duplicate luxury film",
+                    },
+                    {
+                        "video_url": f"https://www.youtube.com/watch?v={vid2}",
+                        "canonical_url": f"https://www.youtube.com/watch?v={vid2}",
+                        "title": "Jewelry campaign film 4K",
+                    },
+                ],
+            )
             _run(
                 [
                     "run-task",
                     "--request",
                     "我要找高端奢侈品官方广告，要求 4K，排除 review 和 unboxing",
-                    "--offline",
-                    "true",
                     "--offline-candidates",
-                    "examples/sample_candidates.jsonl",
-                    "--skip-format-probe",
-                    "true",
-                    "--ai",
-                    "false",
+                    str(candidates),
                     "--max-results",
                     "2",
                 ]
             )
-            task_root = ROOT / "output" / "tasks"
-            tasks = sorted(task_root.glob("task_*"), key=lambda p: p.stat().st_mtime, reverse=True)
-            self.assertTrue(tasks)
-            latest = tasks[0]
-            self.assertTrue((latest / "review_sheet.csv").exists())
-            self.assertTrue((latest / "run_summary.md").exists())
-            self.assertTrue((latest / "search_seed_links.csv").exists())
+        task_root = ROOT / "output" / "tasks"
+        tasks = sorted(task_root.glob("task_*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        self.assertTrue(tasks)
+        latest = tasks[0]
+        self.assertTrue((latest / "review_sheet.csv").exists())
+        self.assertTrue((latest / "llm_found_urls.jsonl").exists())
+        self.assertTrue((latest / "dedupe_report.json").exists())
+        self.assertTrue((latest / "duplicates.jsonl").exists())
+        self.assertTrue((latest / "run_summary.md").exists())
+        summary = json.loads((latest / "run_summary.json").read_text(encoding="utf-8"))
+        self.assertGreaterEqual(summary["total_candidates"], 3)
+        self.assertGreaterEqual(summary["duplicate_count"], 1)
 
     def test_product_pipeline_cleans_malformed_terminal_unicode(self) -> None:
         from src.core.pipeline import run_new_task
         from src.core.task import PipelineOptions
 
-        result = run_new_task(
-            "我要找奢侈品广告\udce3，要求 4K",
-            PipelineOptions(
-                ai_enabled=False,
-                offline_candidates_path=ROOT / "examples" / "sample_candidates.jsonl",
-                skip_format_probe=True,
-                max_results_per_query=1,
-            ),
-        )
+        with tempfile.TemporaryDirectory() as d:
+            candidates = Path(d) / "candidates.jsonl"
+            _write_jsonl(
+                candidates,
+                [
+                    {
+                        "video_url": "https://vimeo.com/999000111222",
+                        "title": "Luxury product film 4K",
+                    }
+                ],
+            )
+            result = run_new_task(
+                "我要找奢侈品广告\udce3，要求 4K",
+                PipelineOptions(
+                    offline_candidates_path=candidates,
+                    max_results_per_query=1,
+                ),
+            )
         text = (result.task_dir / "user_request.txt").read_text(encoding="utf-8")
         self.assertIn("我要找奢侈品广告", text)
         self.assertNotIn("\udce3", text)
 
-    def test_planner_normalizes_string_fields_from_llm(self) -> None:
-        from src.console.app import _plan_summary
-        from src.llm.planner import normalize_search_plan
+    def test_web_url_parser_accepts_video_urls_only(self) -> None:
+        from src.llm.web_url_scout import _parse_candidates
 
-        plan = normalize_search_plan(
-            {
-                "duration": "10 到 180 秒",
-                "resolution": "4K / 2160p required",
-                "positive_negative_keywords": "review, unboxing, vlog",
-                "tasks": [
-                    {
-                        "id": "main",
-                        "category": "campaigns",
-                        "keywords": "luxury product film, official commercial",
-                        "brands": "Dior, Prada",
-                    }
-                ],
-            },
-            "我要找高端奢侈品官方广告，时长10到180秒，画质要求4k",
-        )
-        self.assertEqual(plan["duration"]["min_seconds"], 10)
-        self.assertEqual(plan["duration"]["max_seconds"], 180)
-        self.assertTrue(plan["resolution"]["require_4k"])
-        self.assertEqual(plan["tasks"][0]["brands"], ["Dior", "Prada"])
-        self.assertIn("清晰度：优先 2160p / 4K", _plan_summary(plan))
-
-    def test_ytdlp_search_fallback_parses_entries(self) -> None:
-        with tempfile.TemporaryDirectory() as d:
-            bin_dir = Path(d) / "bin"
-            bin_dir.mkdir()
-            fake = bin_dir / "yt-dlp"
-            fake.write_text(
-                "#!/usr/bin/env python3\n"
-                "import json\n"
-                "print(json.dumps({'entries': [{'id': 'abc123XYZ90', 'title': 'Dior product film 4K', 'channel': 'Dior', 'duration': 60, 'webpage_url': 'https://www.youtube.com/watch?v=abc123XYZ90'}]}))\n",
-                encoding="utf-8",
-            )
-            fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
-            prev_path = os.environ.get("PATH", "")
-            os.environ["PATH"] = str(bin_dir) + os.pathsep + prev_path
-            try:
-                from src.youtube_search import execute_search_plan_ytdlp
-
-                rows, warnings = execute_search_plan_ytdlp(
-                    {
-                        "global_rules": {"max_results_per_keyword": 1},
-                        "tasks": [{"id": "t1", "keywords": ["luxury ad"], "brands": []}],
-                    }
-                )
-            finally:
-                os.environ["PATH"] = prev_path
-            self.assertFalse(warnings)
-            self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["video_id"], "abc123XYZ90")
-
-    def test_seed_links_include_vimeo_search_urls(self) -> None:
-        from src.source_seed_links import build_seed_link_rows
-
-        rows = build_seed_link_rows(
-            {
-                "tasks": [
-                    {
-                        "id": "luxury",
-                        "category": "campaigns",
-                        "subcategory": "product",
-                        "keywords": ["product film"],
-                        "brands": ["Dior"],
-                    }
-                ]
-            },
-            max_queries=10,
-        )
-        urls = [row["url"] for row in rows]
-        self.assertTrue(any("vimeo.com/search" in url for url in urls))
-        self.assertTrue(any("site%3Avimeo.com" in url for url in urls))
-        self.assertTrue(any("youtube.com/results" in url for url in urls))
-
-    def test_offline_fixture_pipeline(self) -> None:
-        prev = os.environ.get("SKIP_FORMAT_PROBE")
-        os.environ["SKIP_FORMAT_PROBE"] = "1"
-        try:
-            with tempfile.TemporaryDirectory() as d:
-                base = Path(d)
-                enriched = base / "enriched.jsonl"
-                probed = base / "probed.jsonl"
-                ok = base / "rule_ok.jsonl"
-                rej = base / "rule_rej.jsonl"
-                llm_ok = base / "llm_ok.jsonl"
-                llm_rej = base / "llm_rej.jsonl"
-                export_dir = base / "export"
-
-                _run(["enrich", "--input", "data/fixtures/sample_raw.jsonl", "--output", str(enriched)])
-                _run(["probe-format", "--input", str(enriched), "--output", str(probed)])
-                _run(["filter", "--input", str(probed), "--output", str(ok), "--rejected", str(rej)])
-                _run(["llm-filter", "--input", str(ok), "--output", str(llm_ok), "--rejected", str(llm_rej), "--use-llm", "false"])
-                _run(
-                    [
-                        "export",
-                        "--input",
-                        str(llm_ok),
-                        "--format",
-                        "markdown",
-                        "--output-dir",
-                        str(export_dir),
-                        "--rejected-rule",
-                        str(rej),
-                        "--rejected-llm",
-                        str(llm_rej),
+        rows = _parse_candidates(
+            json.dumps(
+                {
+                    "candidates": [
+                        {"url": "https://vimeo.com/123456789", "title": "Dior product film"},
+                        {"url": "https://www.youtube.com/watch?v=AbCdEfGhIj1", "title": "Brand commercial"},
+                        {"url": "https://example.com/not-a-video", "title": "No"},
                     ]
-                )
+                }
+            )
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["source_platform"], "vimeo")
+        self.assertEqual(rows[1]["source_platform"], "youtube")
 
-                md = export_dir / "markdown" / "filtered_urls.md"
-                self.assertTrue(md.exists())
-                self.assertIn("Export statistics", md.read_text(encoding="utf-8"))
-        finally:
-            if prev is None:
-                os.environ.pop("SKIP_FORMAT_PROBE", None)
-            else:
-                os.environ["SKIP_FORMAT_PROBE"] = prev
+    def test_local_dedupe_marks_current_duplicates(self) -> None:
+        from src.core.dedupe import dedupe_records
+
+        stamp = str(time.time_ns())[-12:]
+        unique, duplicates, stats = dedupe_records(
+            [
+                {"video_url": f"https://vimeo.com/{stamp}"},
+                {"video_url": f"https://vimeo.com/{stamp}"},
+                {"video_url": ""},
+            ],
+            exclude_task_dir=ROOT / "output" / "tasks" / "not-a-real-task",
+        )
+        self.assertEqual(len(unique), 1)
+        self.assertEqual(len(duplicates), 2)
+        self.assertEqual(stats["duplicates"], 2)
+        self.assertEqual(duplicates[0]["duplicate_reason"], "duplicate_in_current_task")
+        self.assertEqual(duplicates[1]["duplicate_reason"], "missing_url")
+
+    def test_cli_help_no_longer_exposes_old_search_stack(self) -> None:
+        proc = subprocess.run(
+            [sys.executable, "-m", "src.main", "--help"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        self.assertIn("run-task", proc.stdout)
+        self.assertNotIn("yt-dlp", proc.stdout)
+        self.assertNotIn("YOUTUBE_API_KEY", proc.stdout)
+        self.assertNotIn("probe-format", proc.stdout)
 
 
 if __name__ == "__main__":

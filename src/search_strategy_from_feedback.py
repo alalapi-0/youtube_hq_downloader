@@ -172,41 +172,16 @@ def build_rule_based_plan(stats: Dict[str, Any], reviewed_records: List[Dict[str
     require_4k = _require_4k(stats)
 
     plan = {
-        "project": {"name": "feedback_next_search_plan"},
-        "global_rules": {
-            "max_results_per_keyword": 3 if sample_small else 8,
-            "default_region_code": "US",
-            "default_relevance_language": "en",
+        "project": {"name": "ad-url-scout-feedback-strategy"},
+        "mode": "openrouter_web_search_only",
+        "web_search": {"target_url_count": 20 if sample_small else 40},
+        "query_guidance": {
+            "include_keywords": keywords[:40],
+            "include_brands": brands[:30],
+            "preferred_channels": channels[:30],
+            "negative_keywords": negative[:40],
+            "prefer_4k_language": bool(require_4k),
         },
-        "duration": {
-            "min_seconds": 30,
-            "max_seconds": 7200,
-        },
-        "resolution": {
-            "require_4k": bool(require_4k),
-            "min_height": 2160 if require_4k else None,
-            "allow_text_evidence_when_format_unknown": not require_4k,
-            "allow_format_probe": True,
-        },
-        "positive_negative_keywords": {
-            "negative_keywords_file": "config/filters.yaml",
-            "brand_positive_keywords_file": "config/brands.yaml",
-            "suggested_negative_keywords": negative[:40],
-            "suggested_positive_expansions": expansions[:40],
-        },
-        "tasks": [
-            {
-                "id": "feedback_rule_based_next_round",
-                "category": "campaigns",
-                "subcategory": "product",
-                "keywords": keywords[:40],
-                "brands": brands[:30],
-                "preferred_channels": channels[:30],
-                "max_results_per_keyword": 3 if sample_small else 8,
-                "region_code": "US",
-                "relevance_language": "en",
-            }
-        ],
         "_strategy_suggestions": {
             "sample_size_too_small": sample_small,
             "lower_priority_queries": [
@@ -235,11 +210,11 @@ def render_rule_based_strategy_markdown(stats: Dict[str, Any], plan: Dict[str, A
         "",
         "## 增加优先级",
     ]
-    task = (plan.get("tasks") or [{}])[0]
-    for kw in task.get("keywords") or []:
+    guidance = plan.get("query_guidance") if isinstance(plan.get("query_guidance"), dict) else {}
+    for kw in guidance.get("include_keywords") or []:
         lines.append(f"- `{kw}`")
     lines.extend(["", "## 保留品牌"])
-    brands = task.get("brands") or []
+    brands = guidance.get("include_brands") or []
     lines.extend([f"- `{b}`" for b in brands] or ["- 暂无高置信品牌；继续积累样本。"])
     lines.extend(["", "## 频道白名单建议"])
     channels = suggestions.get("channel_whitelist_suggestions") or []
@@ -254,8 +229,8 @@ def render_rule_based_strategy_markdown(stats: Dict[str, Any], plan: Dict[str, A
         [
             "",
             "## 规则建议",
-            f"- require_4k: `{(plan.get('resolution') or {}).get('require_4k')}`",
-            f"- max_results_per_keyword: `{(plan.get('global_rules') or {}).get('max_results_per_keyword')}`",
+            f"- prefer_4k_language: `{guidance.get('prefer_4k_language')}`",
+            f"- target_url_count: `{(plan.get('web_search') or {}).get('target_url_count')}`",
             "",
             "## 依据来自哪些统计结果",
             "- `by_query_used` high/low pass rate",

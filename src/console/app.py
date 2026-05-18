@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 import getpass
-import json
-import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import List
 
 import yaml
 
-from ..core.config import APP_CONFIG_PATH, load_app_config, openrouter_api_key, product_status, youtube_api_key
+from ..core.config import APP_CONFIG_PATH, load_app_config, openrouter_api_key, product_status
 from ..core.paths import latest_task_dir, task_paths
 from ..core.pipeline import import_feedback_for_task, run_new_task
 from ..core.task import PipelineOptions
 from ..env_loader import load_dotenv
-from ..llm.planner import generate_search_plan
 from ..utils import PROJECT_ROOT, clean_text
 
 
@@ -69,10 +66,7 @@ def show_header(current_task: Path | None = None) -> None:
     _print("")
     _print("当前状态：")
     _print(f"- OpenRouter: {'已配置' if status['openrouter_configured'] else '未配置'}")
-    _print(f"- YouTube API: {'已配置' if status['youtube_api_configured'] else '未配置，可选'}")
-    _print(f"- yt-dlp: {'可用' if status['ytdlp_available'] else '不可用，可选'}")
-    cookie = "关闭" if status.get("cookie_mode") == "off" else f"{status.get('cookie_mode')} {status.get('cookie_browser') or ''}".strip()
-    _print(f"- Cookie: {cookie}")
+    _print("- 搜索方式: OpenRouter Web Search")
     _print(f"- 当前任务: {latest.name if latest else '无'}")
     _print(f"- 上次结果: {last_result}")
     _print("")
@@ -110,68 +104,6 @@ def _read_user_request() -> str:
     return clean_text("\n".join(lines)).strip()
 
 
-def _plan_summary(plan: Dict[str, Any]) -> str:
-    tasks = [t for t in (plan.get("tasks") or []) if isinstance(t, dict)]
-    brands: List[str] = []
-    keywords: List[str] = []
-    for task in tasks:
-        brands.extend(str(x) for x in (task.get("brands") or []) if str(x).strip())
-        keywords.extend(str(x) for x in (task.get("keywords") or []) if str(x).strip())
-    pn = plan.get("positive_negative_keywords") if isinstance(plan.get("positive_negative_keywords"), dict) else {}
-    neg = (pn.get("suggested_negative_keywords") or [])
-    dur = plan.get("duration") if isinstance(plan.get("duration"), dict) else {}
-    res = plan.get("resolution") if isinstance(plan.get("resolution"), dict) else {}
-    glob = plan.get("global_rules") if isinstance(plan.get("global_rules"), dict) else {}
-    cap = int(glob.get("max_results_per_keyword") or 10)
-    estimate = max(1, len(keywords)) * max(1, cap) * max(1, len(brands) or 1)
-    return "\n".join(
-        [
-            "AI 已生成搜索计划：",
-            "",
-            f"目标类别：{', '.join(str(t.get('category') or '') for t in tasks) or 'campaigns'}",
-            f"品牌：{', '.join(dict.fromkeys(brands)) or '未限定'}",
-            f"关键词数量：{len(dict.fromkeys(keywords))}",
-            f"排除内容：{', '.join(str(x) for x in neg[:12]) or '使用默认排除词'}",
-            f"时长范围：{dur.get('min_seconds', '')}-{dur.get('max_seconds', '')} 秒",
-            f"清晰度：{'优先 2160p / 4K' if res.get('require_4k') else '不强制 4K'}",
-            f"预计搜索候选数：约 {estimate} 条",
-        ]
-    )
-
-
-def _edit_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
-    tasks = [t for t in (plan.get("tasks") or []) if isinstance(t, dict)]
-    if not tasks:
-        return plan
-    while True:
-        _print("")
-        _print("请选择：")
-        _print("1. 继续执行")
-        _print("2. 编辑关键词")
-        _print("3. 编辑品牌")
-        _print("4. 编辑过滤规则")
-        _print("0. 取消")
-        choice = _prompt("选择", "1")
-        if choice == "1":
-            return plan
-        if choice == "0":
-            return {}
-        if choice == "2":
-            raw = _prompt("关键词，用逗号分隔", ", ".join(tasks[0].get("keywords") or []))
-            tasks[0]["keywords"] = [x.strip() for x in raw.split(",") if x.strip()]
-        elif choice == "3":
-            raw = _prompt("品牌，用逗号分隔", ", ".join(tasks[0].get("brands") or []))
-            tasks[0]["brands"] = [x.strip() for x in raw.split(",") if x.strip()]
-        elif choice == "4":
-            min_s = _prompt("最短秒数", str((plan.get("duration") or {}).get("min_seconds") or 20))
-            max_s = _prompt("最长秒数", str((plan.get("duration") or {}).get("max_seconds") or 180))
-            require_4k = _confirm("是否要求/优先 4K？", default_yes=True)
-            plan.setdefault("duration", {})["min_seconds"] = int(min_s) if min_s.isdigit() else 20
-            plan.setdefault("duration", {})["max_seconds"] = int(max_s) if max_s.isdigit() else 180
-            plan.setdefault("resolution", {})["require_4k"] = require_4k
-            plan.setdefault("resolution", {})["min_height"] = 2160 if require_4k else None
-
-
 def start_new_task() -> Path | None:
     user_request = _read_user_request()
     if not user_request:
@@ -180,53 +112,34 @@ def start_new_task() -> Path | None:
     if not openrouter_api_key():
         _print("")
         _print("未检测到 OPENROUTER_API_KEY。")
-        _print("AI 搜索计划和语义筛选需要 OpenRouter API Key。")
+        _print("当前版本只通过 OpenRouter Web Search 搜索 URL，需要 OpenRouter API Key。")
         _print("你可以：")
         _print("1. 现在配置")
-        _print("2. 使用规则模式继续，效果较弱")
         _print("0. 返回")
         c = _prompt("选择", "1")
         if c == "1":
             configure_keys(openrouter_only=True)
-        elif c == "0":
+        if c == "0" or not openrouter_api_key():
             return None
 
-    use_ai = bool(openrouter_api_key())
-    plan, warnings = generate_search_plan(user_request, use_ai=use_ai)
-    for warning in warnings:
-        _print(f"[提示] {warning}")
+    default_count = str((load_app_config().get("web_search") or {}).get("target_url_count") or 40)
+    target_raw = _prompt("希望本轮最多保留多少个去重 URL", default_count)
+    target = int(target_raw) if target_raw.isdigit() else int(default_count)
     _print("")
-    _print(_plan_summary(plan))
-    plan = _edit_plan(plan)
-    if not plan:
-        _print("已取消任务。")
-        return None
-
-    if not youtube_api_key():
-        _print("")
-        _print("未检测到 YOUTUBE_API_KEY。")
-        _print("系统会改用 yt-dlp 搜索降级模式，不下载视频。")
-        _print("如需读取你本机 Chrome 已可访问的页面信息，可在设置中启用 Chrome Cookie。")
-        if not _confirm("仍然继续创建任务？", default_yes=True):
-            return None
+    _print("即将通过 OpenRouter Web Search 搜索 Vimeo / YouTube 视频 URL，并做本地查重。")
     result = run_new_task(
         user_request,
-        PipelineOptions(ai_enabled=use_ai, search_plan_override=plan),
+        PipelineOptions(ai_enabled=True, max_results_per_query=target),
     )
     _print("")
     _print("任务完成：")
-    _print(f"候选 URL：{result.summary['total_candidates']}")
-    _print(f"元数据读取成功：{result.summary['metadata_success_count']}")
-    _print(f"规则过滤通过：{result.summary['rule_pass_count']}")
-    _print(f"AI 复筛通过：{result.summary['llm_pass_count']}")
+    _print(f"AI 找到 URL：{result.summary['total_candidates']}")
+    _print(f"本地查重保留：{result.summary['final_count']}")
+    _print(f"重复/无效 URL：{result.summary.get('duplicate_count', 0)}")
     _print(f"需要人工审核：{result.summary['final_count']}")
     _print("")
     _print("请打开：")
     _print(result.summary["review_sheet_csv"])
-    if result.summary.get("total_candidates") == 0 and result.summary.get("search_seed_links_csv"):
-        _print("")
-        _print("本次自动搜索未拿到候选 URL，可先打开手动寻源链接表：")
-        _print(str(result.summary["search_seed_links_csv"]))
     return result.task_dir
 
 
@@ -260,8 +173,9 @@ def import_feedback() -> None:
         _print(f"[提示] {warning}")
     if _confirm("是否基于下一轮计划立即开始下一轮？", default_yes=False):
         req = (task / "user_request.txt").read_text(encoding="utf-8") if (task / "user_request.txt").exists() else "根据人工反馈继续优化搜索"
-        plan = yaml.safe_load(Path(result["next_search_plan"]).read_text(encoding="utf-8"))
-        run_new_task(req, PipelineOptions(ai_enabled=bool(openrouter_api_key()), search_plan_override=plan if isinstance(plan, dict) else None))
+        plan_text = Path(result["next_search_plan"]).read_text(encoding="utf-8") if Path(result["next_search_plan"]).exists() else ""
+        next_req = clean_text(req + "\n\n请结合以下人工反馈策略继续寻找新的 URL，避免重复上一轮结果：\n" + plan_text)
+        run_new_task(next_req, PipelineOptions(ai_enabled=True))
 
 
 def analyze_feedback_only() -> None:
@@ -274,10 +188,8 @@ def configure_keys(*, openrouter_only: bool = False) -> None:
         _print("设置：")
         _print("1. 设置 OPENROUTER_API_KEY")
         if not openrouter_only:
-            _print("2. 设置 YOUTUBE_API_KEY（可选）")
-            _print("3. 修改 OpenRouter 模型")
-            _print("4. 启用 Chrome Cookie 辅助 yt-dlp（高级，可选）")
-            _print("5. 关闭 Cookie")
+            _print("2. 修改 OpenRouter 模型")
+            _print("3. 修改默认 URL 数量")
         _print("0. 返回")
         c = _prompt("选择", "0")
         if c == "0":
@@ -288,41 +200,23 @@ def configure_keys(*, openrouter_only: bool = False) -> None:
                 _set_env_key("OPENROUTER_API_KEY", secret)
                 _print("已写入 OPENROUTER_API_KEY。")
         elif c == "2" and not openrouter_only:
-            secret = getpass.getpass("请输入 YOUTUBE_API_KEY（可选，不回显）: ").strip()
-            if secret:
-                _set_env_key("YOUTUBE_API_KEY", secret)
-                _print("已写入 YOUTUBE_API_KEY。")
-        elif c == "3" and not openrouter_only:
             cfg = load_app_config()
             model = _prompt("OpenRouter 模型", str((cfg.get("llm") or {}).get("model") or "google/gemini-2.5-flash"))
             cfg.setdefault("llm", {})["model"] = model
             APP_CONFIG_PATH.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
             _print("模型已更新。")
-        elif c == "4" and not openrouter_only:
-            _print("Cookie 只会交给 yt-dlp 读取你本机浏览器已可访问的页面信息；不会下载视频，不会绕过权限。")
-            if _confirm("确认启用 Chrome Cookie？", default_yes=False):
-                cfg = load_app_config()
-                cfg.setdefault("advanced", {})["use_cookie"] = True
-                cfg.setdefault("advanced", {})["cookies_from_browser"] = "chrome"
-                cfg.setdefault("advanced", {})["cookie_file"] = ""
-                APP_CONFIG_PATH.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
-                _print("已启用 Chrome Cookie 辅助 yt-dlp。")
-        elif c == "5" and not openrouter_only:
+        elif c == "3" and not openrouter_only:
             cfg = load_app_config()
-            cfg.setdefault("advanced", {})["use_cookie"] = False
-            cfg.setdefault("advanced", {})["cookies_from_browser"] = ""
-            cfg.setdefault("advanced", {})["cookie_file"] = ""
+            current = str((cfg.get("web_search") or {}).get("target_url_count") or 40)
+            count = _prompt("默认最多保留 URL 数量", current)
+            if count.isdigit():
+                cfg.setdefault("web_search", {})["target_url_count"] = int(count)
             APP_CONFIG_PATH.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
-            _print("已关闭 Cookie。")
+            _print("默认 URL 数量已更新。")
 
 
 def advanced_menu() -> None:
     _print("高级 CLI：")
-    _print("- python3 -m src.main plan")
-    _print("- python3 -m src.main search")
-    _print("- python3 -m src.main analyze-url")
-    _print("- python3 -m src.main filter")
-    _print("- python3 -m src.main export")
     _print("- python3 -m src.main run-task")
     _print("")
     _print("详细说明见 docs/advanced_cli.md")
