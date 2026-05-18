@@ -223,6 +223,10 @@ def start_new_task() -> Path | None:
     _print("")
     _print("请打开：")
     _print(result.summary["review_sheet_csv"])
+    if result.summary.get("total_candidates") == 0 and result.summary.get("search_seed_links_csv"):
+        _print("")
+        _print("本次自动搜索未拿到候选 URL，可先打开手动寻源链接表：")
+        _print(str(result.summary["search_seed_links_csv"]))
     return result.task_dir
 
 

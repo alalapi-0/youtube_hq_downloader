@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 
 import yaml
 
-from .. import filters, format_probe, metadata_enrich, review_feedback_analyzer, review_schema, search_strategy_from_feedback, url_analyzer, youtube_search
+from .. import filters, format_probe, metadata_enrich, review_feedback_analyzer, review_schema, search_strategy_from_feedback, source_seed_links, url_analyzer, youtube_search
 from ..cookie_loader import load_cookie_settings
 from ..llm.feedback_analyzer import analyze_feedback_with_openrouter
 from ..llm.planner import generate_search_plan
@@ -92,6 +92,7 @@ def _summary_markdown(summary: Dict[str, Any]) -> str:
         "## 输出文件",
         f"- 人工审核表：`{summary['review_sheet_csv']}`",
         f"- Markdown 预览：`{summary['review_sheet_md']}`",
+        f"- 手动寻源链接：`{summary.get('search_seed_links_csv', '')}`",
         f"- 结构化数据：`{summary['final_candidates_path']}`",
         f"- 拒绝明细：`{summary['rejected_path']}`",
         "",
@@ -149,6 +150,12 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
             if isinstance(task, dict):
                 task["max_results_per_keyword"] = int(options.max_results_per_query)
     _write_yaml(paths["search_plan"], search_plan)
+    seed_rows = source_seed_links.build_seed_link_rows(search_plan, max_queries=120)
+    source_seed_links.write_seed_links(
+        seed_rows,
+        output_csv=paths["search_seed_links_csv"],
+        output_md=paths["search_seed_links_md"],
+    )
 
     raw_rows: List[Dict[str, Any]] = []
     offline = bool(options.offline_candidates_path)
@@ -170,6 +177,8 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
             warnings.extend(ytdlp_warnings)
         except Exception as exc:
             errors.append(f"yt-dlp 搜索降级失败：{exc}")
+        if not raw_rows:
+            warnings.append(f"自动搜索未拿到候选 URL；已生成手动寻源链接：{paths['search_seed_links_csv']}")
     write_jsonl(paths["candidates_raw"], raw_rows)
 
     analysis_rows = url_analyzer.analyze_url_records(
@@ -236,11 +245,14 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         "rejected_count": len(rejected_rows),
         "review_sheet_csv": str(paths["review_sheet_csv"]),
         "review_sheet_md": str(paths["review_sheet_md"]),
+        "search_seed_links_csv": str(paths["search_seed_links_csv"]),
+        "search_seed_links_md": str(paths["search_seed_links_md"]),
         "final_candidates_path": str(paths["final_candidates"]),
         "rejected_path": str(paths["rejected"]),
         "errors": errors,
         "warnings": warnings,
         "next_steps": [
+            "如果候选 URL 为 0，请先打开 search_seed_links.csv，从 Vimeo/Google/YouTube 搜索入口人工复制视频 URL。",
             "请打开 review_sheet.csv，填写 manual_status、manual_reject_reasons、manual_notes。",
             "填写后回到控制台选择“导入人工审核反馈”。",
         ],

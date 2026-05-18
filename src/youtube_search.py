@@ -278,13 +278,21 @@ def execute_search_plan_ytdlp(
                 "--dump-single-json",
                 "--ignore-errors",
                 "--no-warnings",
+                "--socket-timeout",
+                "10",
+                "--retries",
+                "1",
+                "--extractor-retries",
+                "1",
                 *cookie_args,
                 f"ytsearch{mrpk}:{kw}",
             ]
             try:
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180, text=True)
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35, text=True)
                 if proc.returncode != 0 or not proc.stdout.strip():
-                    warnings.append(f"yt-dlp 搜索失败：{kw}")
+                    detail = " ".join((proc.stderr or "").split())[:180]
+                    suffix = f"（{detail}）" if detail else ""
+                    warnings.append(f"yt-dlp 搜索失败：{kw}{suffix}")
                     continue
                 payload = json.loads(proc.stdout)
             except subprocess.TimeoutExpired:

@@ -25,4 +25,12 @@ YOUTUBE_API_KEY=optional_youtube_api_key_here
 output/tasks/task_xxx/review_sheet.csv
 ```
 
+如果候选 URL 为 0，先打开：
+
+```text
+output/tasks/task_xxx/search_seed_links.csv
+```
+
+这里面是批量生成的 Vimeo / Google site:vimeo / YouTube 搜索入口。你可以手动打开链接、复制视频 URL，再用高级 CLI 的 `analyze-url` 分析。
+
 填写人工审核字段后，回到控制台选择「导入人工审核反馈」。

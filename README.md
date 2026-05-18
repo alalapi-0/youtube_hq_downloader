@@ -55,6 +55,8 @@ output/tasks/task_YYYYMMDD_NNN/
   rejected.jsonl
   review_sheet.csv
   review_sheet.md
+  search_seed_links.csv
+  search_seed_links.md
   run_summary.json
   run_summary.md
 ```
@@ -63,12 +65,13 @@ output/tasks/task_YYYYMMDD_NNN/
 
 - `review_sheet.csv`
 - `review_sheet.md`
+- `search_seed_links.csv`：自动搜索失败或候选为 0 时，先打开这里面的 Vimeo / Google / YouTube 搜索入口人工找 URL
 - `run_summary.md`
 
 ## 没有 Key 会怎样
 
 - 没有 `OPENROUTER_API_KEY`：AI 搜索计划和语义筛选不可用，系统会提示配置，也允许规则模式继续。
-- 没有 `YOUTUBE_API_KEY`：自动改用 `yt-dlp` 搜索降级模式；可在设置中显式启用 Chrome Cookie 辅助读取你本机已可访问的页面信息。
+- 没有 `YOUTUBE_API_KEY`：自动改用 `yt-dlp` 搜索降级模式；如果自动搜索拿不到候选，会生成 `search_seed_links.csv` 供你手动打开 Vimeo/Google/YouTube 搜索入口。
 - 没有 `yt-dlp`：跳过 4K 格式探测，只使用已有 metadata 和文本证据。
 
 ## 人工反馈

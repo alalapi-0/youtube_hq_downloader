@@ -61,6 +61,8 @@ def task_paths(task_dir: Path) -> dict[str, Path]:
         "rejected": task_dir / "rejected.jsonl",
         "review_sheet_csv": task_dir / "review_sheet.csv",
         "review_sheet_md": task_dir / "review_sheet.md",
+        "search_seed_links_csv": task_dir / "search_seed_links.csv",
+        "search_seed_links_md": task_dir / "search_seed_links.md",
         "manual_reviewed": task_dir / "manual_reviewed.jsonl",
         "feedback_md": task_dir / "feedback_analysis.md",
         "feedback_json": task_dir / "feedback_analysis.json",

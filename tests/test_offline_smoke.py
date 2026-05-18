@@ -54,6 +54,7 @@ class OfflineSmoke(unittest.TestCase):
             latest = tasks[0]
             self.assertTrue((latest / "review_sheet.csv").exists())
             self.assertTrue((latest / "run_summary.md").exists())
+            self.assertTrue((latest / "search_seed_links.csv").exists())
 
     def test_product_pipeline_cleans_malformed_terminal_unicode(self) -> None:
         from src.core.pipeline import run_new_task
@@ -126,6 +127,28 @@ class OfflineSmoke(unittest.TestCase):
             self.assertFalse(warnings)
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["video_id"], "abc123XYZ90")
+
+    def test_seed_links_include_vimeo_search_urls(self) -> None:
+        from src.source_seed_links import build_seed_link_rows
+
+        rows = build_seed_link_rows(
+            {
+                "tasks": [
+                    {
+                        "id": "luxury",
+                        "category": "campaigns",
+                        "subcategory": "product",
+                        "keywords": ["product film"],
+                        "brands": ["Dior"],
+                    }
+                ]
+            },
+            max_queries=10,
+        )
+        urls = [row["url"] for row in rows]
+        self.assertTrue(any("vimeo.com/search" in url for url in urls))
+        self.assertTrue(any("site%3Avimeo.com" in url for url in urls))
+        self.assertTrue(any("youtube.com/results" in url for url in urls))
 
     def test_offline_fixture_pipeline(self) -> None:
         prev = os.environ.get("SKIP_FORMAT_PROBE")

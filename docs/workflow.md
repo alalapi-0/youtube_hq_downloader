@@ -27,10 +27,10 @@ python3 run.py
 
 ## 任务目录
 
-所有产物按任务归档到 `output/tasks/task_YYYYMMDD_NNN/`。用户优先查看 `review_sheet.csv` 和 `run_summary.md`。
+所有产物按任务归档到 `output/tasks/task_YYYYMMDD_NNN/`。用户优先查看 `review_sheet.csv`、`search_seed_links.csv` 和 `run_summary.md`。
 
 ## 降级模式
 
 - OpenRouter 缺失：规则模式生成计划，跳过 AI 语义复筛。
-- YouTube API 缺失：自动改用 `yt-dlp` 搜索降级模式；Chrome Cookie 只在用户显式启用后使用。
+- YouTube API 缺失：自动改用 `yt-dlp` 搜索降级模式；如果自动搜索失败，会生成 `search_seed_links.csv`，里面是 Vimeo / Google site:vimeo / YouTube 的人工寻源入口。
 - yt-dlp 缺失：跳过格式探测。
