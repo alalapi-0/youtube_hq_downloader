@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -12,7 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run(args: list[str], cwd: Path = ROOT) -> None:
-    subprocess.run([sys.executable, "-m", "src.main", *args], cwd=cwd, check=True)
+    env = os.environ.copy()
+    env["OPENROUTER_API_KEY"] = ""
+    env["YOUTUBE_API_KEY"] = ""
+    subprocess.run([sys.executable, "-m", "src.main", *args], cwd=cwd, env=env, check=True)
 
 
 class OfflineSmoke(unittest.TestCase):
@@ -50,6 +54,35 @@ class OfflineSmoke(unittest.TestCase):
             latest = tasks[0]
             self.assertTrue((latest / "review_sheet.csv").exists())
             self.assertTrue((latest / "run_summary.md").exists())
+
+    def test_ytdlp_search_fallback_parses_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            bin_dir = Path(d) / "bin"
+            bin_dir.mkdir()
+            fake = bin_dir / "yt-dlp"
+            fake.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json\n"
+                "print(json.dumps({'entries': [{'id': 'abc123XYZ90', 'title': 'Dior product film 4K', 'channel': 'Dior', 'duration': 60, 'webpage_url': 'https://www.youtube.com/watch?v=abc123XYZ90'}]}))\n",
+                encoding="utf-8",
+            )
+            fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+            prev_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = str(bin_dir) + os.pathsep + prev_path
+            try:
+                from src.youtube_search import execute_search_plan_ytdlp
+
+                rows, warnings = execute_search_plan_ytdlp(
+                    {
+                        "global_rules": {"max_results_per_keyword": 1},
+                        "tasks": [{"id": "t1", "keywords": ["luxury ad"], "brands": []}],
+                    }
+                )
+            finally:
+                os.environ["PATH"] = prev_path
+            self.assertFalse(warnings)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["video_id"], "abc123XYZ90")
 
     def test_offline_fixture_pipeline(self) -> None:
         prev = os.environ.get("SKIP_FORMAT_PROBE")

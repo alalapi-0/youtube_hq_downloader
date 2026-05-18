@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 import yaml
 
 from .. import filters, format_probe, metadata_enrich, review_feedback_analyzer, review_schema, search_strategy_from_feedback, url_analyzer, youtube_search
-from ..cookie_loader import CookieSettings
+from ..cookie_loader import load_cookie_settings
 from ..llm.feedback_analyzer import analyze_feedback_with_openrouter
 from ..llm.planner import generate_search_plan
 from ..llm.semantic_filter import semantic_filter_candidates
@@ -36,6 +36,42 @@ def _skip_probe_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         r.setdefault("probe_max_height", None)
         r.setdefault("probe_confirmed_4k", False)
         r.setdefault("available_format_heights", [])
+        out.append(r)
+    return out
+
+
+def _analysis_to_filter_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        source = row.get("source_context") if isinstance(row.get("source_context"), dict) else {}
+        fmt = row.get("format_info") if isinstance(row.get("format_info"), dict) else {}
+        r = coerce_candidate(
+            {
+                "video_id": row.get("video_id") or "",
+                "canonical_url": row.get("video_url") or "",
+                "title": row.get("title") or "",
+                "description": row.get("description") or "",
+                "description_snippet": row.get("description_snippet") or "",
+                "channel_id": row.get("channel_id") or "",
+                "channel_title": row.get("channel_title") or "",
+                "published_at": row.get("published_at") or "",
+                "category": row.get("category") or source.get("category") or "",
+                "subcategory": row.get("subcategory") or source.get("subcategory") or "",
+                "brand": row.get("brand") or source.get("brand") or "",
+                "search_task_id": source.get("search_task_id") or "",
+                "matched_keywords": [source.get("query_used")] if source.get("query_used") else [],
+                "duration_seconds": row.get("duration_seconds"),
+                "view_count": row.get("view_count"),
+                "like_count": row.get("like_count"),
+                "comment_count": row.get("comment_count"),
+                "thumbnail_best_url": (row.get("thumbnail_urls") or [""])[0] if isinstance(row.get("thumbnail_urls"), list) else "",
+                "tags": row.get("tags") or [],
+                "format_probe_status": fmt.get("format_probe_status") or "pending",
+                "probe_max_height": fmt.get("max_format_height"),
+                "probe_confirmed_4k": bool(fmt.get("has_2160p_format")),
+                "available_format_heights": fmt.get("available_format_heights") or [],
+            }
+        )
         out.append(r)
     return out
 
@@ -87,6 +123,9 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
     errors: List[str] = []
     created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     task_id = task_dir.name
+    cookie_settings = load_cookie_settings(config_path=PROJECT_ROOT / "config" / "app.yaml")
+    if cookie_settings.enabled and cookie_settings.warning:
+        warnings.append(cookie_settings.warning)
 
     paths["user_request"].write_text(user_request.strip() + "\n", encoding="utf-8")
 
@@ -122,27 +161,35 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         except Exception as exc:
             errors.append(f"YouTube 搜索失败：{exc}")
     else:
-        warnings.append(
-            "未检测到 YOUTUBE_API_KEY。系统无法自动按关键词搜索 YouTube；你仍可以导入已有 URL 列表或配置 Key 后重试。"
-        )
+        warnings.append("未检测到 YOUTUBE_API_KEY。已改用 yt-dlp 搜索降级模式，不下载视频。")
+        try:
+            rows, ytdlp_warnings = youtube_search.run_search_plan_ytdlp(paths["search_plan"], cookie_settings=cookie_settings)
+            raw_rows = [coerce_candidate(r) for r in rows]
+            warnings.extend(ytdlp_warnings)
+        except Exception as exc:
+            errors.append(f"yt-dlp 搜索降级失败：{exc}")
     write_jsonl(paths["candidates_raw"], raw_rows)
 
     analysis_rows = url_analyzer.analyze_url_records(
         raw_rows,
         cfg=url_analysis_compat_config(),
-        cookie_settings=CookieSettings(),
+        cookie_settings=cookie_settings,
         offline=offline or not options.use_network,
     )
     write_jsonl(paths["url_analysis"], analysis_rows)
 
-    enriched_rows = raw_rows
+    enriched_rows = _analysis_to_filter_rows(analysis_rows) if analysis_rows else raw_rows
     if raw_rows and youtube_api_key() and not offline and options.use_network:
         try:
             enriched_rows = metadata_enrich.enrich_records(raw_rows, youtube_api_key())
         except Exception as exc:
             warnings.append(f"YouTube 元数据补全失败，已使用已有字段继续：{exc}")
 
-    if raw_rows and not options.skip_format_probe and not offline and options.use_network and bool((load_app_config().get("youtube") or {}).get("use_format_probe", True)):
+    analysis_has_format = any(
+        isinstance(r.get("format_info"), dict) and (r.get("format_info") or {}).get("format_probe_status") == "ok"
+        for r in analysis_rows
+    )
+    if raw_rows and not analysis_has_format and not options.skip_format_probe and not offline and options.use_network and bool((load_app_config().get("youtube") or {}).get("use_format_probe", True)):
         probed_rows = format_probe.probe_records(enriched_rows)
     else:
         probed_rows = _skip_probe_rows(enriched_rows)
@@ -164,7 +211,7 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
     final_analysis_rows = url_analyzer.analyze_url_records(
         llm_ok,
         cfg=url_analysis_compat_config(),
-        cookie_settings=CookieSettings(),
+        cookie_settings=cookie_settings,
         offline=True,
     )
     url_analyzer.export_review_sheet(

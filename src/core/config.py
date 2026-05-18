@@ -4,8 +4,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict
 
-from dotenv import load_dotenv
-
+from ..env_loader import load_dotenv
 from ..utils import PROJECT_ROOT, load_yaml_mapping
 
 
@@ -30,16 +29,23 @@ def load_app_config(path: Path | str = APP_CONFIG_PATH) -> Dict[str, Any]:
     return data
 
 
+def _usable_key(value: str) -> str:
+    key = value.strip()
+    if not key or "your_" in key or "optional_" in key:
+        return ""
+    return key
+
+
 def openrouter_api_key() -> str:
     load_env()
     env_name = str((load_app_config().get("llm") or {}).get("api_key_env") or "OPENROUTER_API_KEY")
-    return os.environ.get(env_name, "").strip()
+    return _usable_key(os.environ.get(env_name, ""))
 
 
 def youtube_api_key() -> str:
     load_env()
     env_name = str((load_app_config().get("youtube") or {}).get("api_key_env") or "YOUTUBE_API_KEY")
-    return os.environ.get(env_name, "").strip()
+    return _usable_key(os.environ.get(env_name, ""))
 
 
 def openrouter_config() -> Dict[str, Any]:
@@ -116,9 +122,13 @@ def url_analysis_compat_config() -> Dict[str, Any]:
 def product_status() -> Dict[str, Any]:
     import shutil
 
+    cfg = load_app_config()
+    adv = cfg.get("advanced") or {}
     return {
         "openrouter_configured": bool(openrouter_api_key()),
         "youtube_api_configured": bool(youtube_api_key()),
         "ytdlp_available": bool(shutil.which("yt-dlp")),
-        "app": load_app_config().get("app") or {},
+        "cookie_mode": "browser" if adv.get("cookies_from_browser") else ("file" if adv.get("cookie_file") else "off"),
+        "cookie_browser": str(adv.get("cookies_from_browser") or ""),
+        "app": cfg.get("app") or {},
     }

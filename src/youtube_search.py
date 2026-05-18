@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
-from dotenv import load_dotenv
-
+from .cookie_loader import CookieSettings, ytdlp_cookie_args
+from .env_loader import load_dotenv
 from .search_plan_builder import load_search_plan
 from .utils import (
     PROJECT_ROOT,
@@ -21,6 +25,8 @@ from .utils import (
 def ensure_api_key() -> str | None:
     load_dotenv(PROJECT_ROOT / ".env")
     k = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if "your_" in k or "optional_" in k:
+        k = ""
     return k or None
 
 
@@ -181,9 +187,139 @@ def execute_search_plan(plan: Dict[str, Any], api_key: str) -> List[Dict[str, An
     return list(merged_by_id.values())
 
 
+def _iso_from_timestamp(value: Any) -> str:
+    try:
+        ts = int(value)
+    except (TypeError, ValueError):
+        return ""
+    return datetime.fromtimestamp(ts, tz=timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _best_thumbnail(info: Dict[str, Any]) -> str:
+    thumbs = info.get("thumbnails") or []
+    if isinstance(thumbs, list):
+        for item in reversed(thumbs):
+            if isinstance(item, dict) and item.get("url"):
+                return str(item["url"])
+    return str(info.get("thumbnail") or "")
+
+
+def _entry_to_candidate(
+    entry: Dict[str, Any],
+    *,
+    kw: str,
+    task: Dict[str, Any],
+    region: str,
+    rel_lang: str,
+) -> Dict[str, Any] | None:
+    raw_url = str(entry.get("webpage_url") or entry.get("url") or "")
+    vid = str(entry.get("id") or "").strip() or str(extract_video_id(raw_url) or "")
+    if not vid:
+        return None
+    canonical = watch_url(vid)
+    desc = str(entry.get("description") or "")
+    return blank_candidate(
+        video_id=vid,
+        canonical_url=canonical,
+        title=entry.get("title") or "",
+        description=desc,
+        description_snippet=sniff_description(desc),
+        channel_id=entry.get("channel_id") or "",
+        channel_title=entry.get("channel") or entry.get("uploader") or "",
+        published_at=entry.get("upload_date") or _iso_from_timestamp(entry.get("timestamp")),
+        thumbnail_best_url=_best_thumbnail(entry),
+        region_code=region,
+        relevance_language=rel_lang,
+        category=str(task.get("category") or ""),
+        subcategory=str(task.get("subcategory") or ""),
+        search_task_id=str(task.get("id") or ""),
+        matched_keywords=[kw],
+        duration_seconds=entry.get("duration"),
+        view_count=entry.get("view_count"),
+        like_count=entry.get("like_count"),
+        comment_count=entry.get("comment_count"),
+        format_probe_status="pending",
+        manual_review_status="pending",
+    )
+
+
+def execute_search_plan_ytdlp(
+    plan: Dict[str, Any],
+    *,
+    cookie_settings: CookieSettings | None = None,
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    bin_path = shutil.which("yt-dlp")
+    if not bin_path:
+        return [], ["未检测到 yt-dlp，无法在无 YouTube API Key 时自动搜索。"]
+
+    cookie_settings = cookie_settings or CookieSettings()
+    cookie_args = ytdlp_cookie_args(cookie_settings)
+    warnings: List[str] = []
+    if cookie_args:
+        warnings.append("已启用 yt-dlp cookies-from-browser/cookie-file，仅用于读取你本机已可访问的公开页面信息。")
+
+    tasks = plan.get("tasks") or []
+    if not isinstance(tasks, list):
+        tasks = []
+    glob = plan.get("global_rules") or {}
+    default_region = str(glob.get("default_region_code") or "US")
+    default_lang = str(glob.get("default_relevance_language") or "en")
+    default_cap = int(glob.get("max_results_per_keyword") or 10)
+    merged_by_id: Dict[str, Dict[str, Any]] = {}
+
+    for task in [t for t in tasks if isinstance(t, dict)]:
+        region = str(task.get("region_code") or default_region)
+        rel_lang = str(task.get("relevance_language") or default_lang)
+        mrpk = max(1, int(task.get("max_results_per_keyword") or default_cap))
+        for kw in _expand_keywords(task):
+            cmd = [
+                bin_path,
+                "--skip-download",
+                "--dump-single-json",
+                "--ignore-errors",
+                "--no-warnings",
+                *cookie_args,
+                f"ytsearch{mrpk}:{kw}",
+            ]
+            try:
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180, text=True)
+                if proc.returncode != 0 or not proc.stdout.strip():
+                    warnings.append(f"yt-dlp 搜索失败：{kw}")
+                    continue
+                payload = json.loads(proc.stdout)
+            except subprocess.TimeoutExpired:
+                warnings.append(f"yt-dlp 搜索超时：{kw}")
+                continue
+            except Exception as exc:
+                warnings.append(f"yt-dlp 搜索异常：{kw} ({type(exc).__name__})")
+                continue
+            entries = payload.get("entries") if isinstance(payload, dict) else []
+            for entry in entries or []:
+                if not isinstance(entry, dict):
+                    continue
+                cand = _entry_to_candidate(entry, kw=kw, task=task, region=region, rel_lang=rel_lang)
+                if not cand:
+                    continue
+                vid = str(cand.get("video_id") or "")
+                if vid in merged_by_id:
+                    merged_by_id[vid] = merge_candidates(merged_by_id[vid], cand)
+                else:
+                    merged_by_id[vid] = cand
+    return list(merged_by_id.values()), warnings
+
+
 def run_search_plan(plan_yaml: Path | str, api_key: str) -> List[Dict[str, Any]]:
     plan = load_search_plan(Path(plan_yaml))
     return execute_search_plan(plan, api_key)
+
+
+def run_search_plan_ytdlp(
+    plan_yaml: Path | str,
+    *,
+    cookie_settings: CookieSettings | None = None,
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    plan = load_search_plan(Path(plan_yaml))
+    return execute_search_plan_ytdlp(plan, cookie_settings=cookie_settings)
 
 
 def run_search_tasks(task_yaml: Path | str, api_key: str) -> List[Dict[str, Any]]:

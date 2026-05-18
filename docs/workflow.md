@@ -20,7 +20,7 @@ Ad URL Scout 的主线是：
 ## 普通用户入口
 
 ```bash
-python run.py
+python3 run.py
 ```
 
 选择「开始新的寻源任务」，输入自然语言需求即可。
@@ -32,5 +32,5 @@ python run.py
 ## 降级模式
 
 - OpenRouter 缺失：规则模式生成计划，跳过 AI 语义复筛。
-- YouTube API 缺失：无法自动关键词搜索，但可继续创建任务和分析已有 URL。
+- YouTube API 缺失：自动改用 `yt-dlp` 搜索降级模式；Chrome Cookie 只在用户显式启用后使用。
 - yt-dlp 缺失：跳过格式探测。

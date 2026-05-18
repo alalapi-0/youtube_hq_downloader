@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 import isodate
-from dotenv import load_dotenv
 
 from .cookie_loader import CookieSettings, cookie_status_for_record, webpage_cookie_file, ytdlp_cookie_args
+from .env_loader import load_dotenv
 from .review_schema import default_manual_review
 from .utils import PROJECT_ROOT, extract_video_id, load_yaml_mapping, read_jsonl, sniff_description, watch_url, write_jsonl
 from .webpage_metadata import empty_webpage_metadata, fetch_webpage_metadata
@@ -147,6 +147,8 @@ def _extract_hashtags(*texts: Any) -> List[str]:
 def _youtube_api_key() -> str | None:
     load_dotenv(PROJECT_ROOT / ".env")
     key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if "your_" in key or "optional_" in key:
+        key = ""
     return key or None
 
 

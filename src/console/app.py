@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import yaml
-from dotenv import load_dotenv
 
 from ..core.config import APP_CONFIG_PATH, load_app_config, openrouter_api_key, product_status, youtube_api_key
 from ..core.paths import latest_task_dir, task_paths
 from ..core.pipeline import import_feedback_for_task, run_new_task
 from ..core.task import PipelineOptions
+from ..env_loader import load_dotenv
 from ..llm.planner import generate_search_plan
 from ..utils import PROJECT_ROOT
 
@@ -71,6 +71,8 @@ def show_header(current_task: Path | None = None) -> None:
     _print(f"- OpenRouter: {'已配置' if status['openrouter_configured'] else '未配置'}")
     _print(f"- YouTube API: {'已配置' if status['youtube_api_configured'] else '未配置，可选'}")
     _print(f"- yt-dlp: {'可用' if status['ytdlp_available'] else '不可用，可选'}")
+    cookie = "关闭" if status.get("cookie_mode") == "off" else f"{status.get('cookie_mode')} {status.get('cookie_browser') or ''}".strip()
+    _print(f"- Cookie: {cookie}")
     _print(f"- 当前任务: {latest.name if latest else '无'}")
     _print(f"- 上次结果: {last_result}")
     _print("")
@@ -201,8 +203,8 @@ def start_new_task() -> Path | None:
     if not youtube_api_key():
         _print("")
         _print("未检测到 YOUTUBE_API_KEY。")
-        _print("系统会创建任务并生成搜索计划，但无法自动按关键词搜索 YouTube。")
-        _print("配置 YOUTUBE_API_KEY 后可获得完整自动搜索能力。")
+        _print("系统会改用 yt-dlp 搜索降级模式，不下载视频。")
+        _print("如需读取你本机 Chrome 已可访问的页面信息，可在设置中启用 Chrome Cookie。")
         if not _confirm("仍然继续创建任务？", default_yes=True):
             return None
     result = run_new_task(
@@ -268,6 +270,8 @@ def configure_keys(*, openrouter_only: bool = False) -> None:
         if not openrouter_only:
             _print("2. 设置 YOUTUBE_API_KEY（可选）")
             _print("3. 修改 OpenRouter 模型")
+            _print("4. 启用 Chrome Cookie 辅助 yt-dlp（高级，可选）")
+            _print("5. 关闭 Cookie")
         _print("0. 返回")
         c = _prompt("选择", "0")
         if c == "0":
@@ -288,16 +292,32 @@ def configure_keys(*, openrouter_only: bool = False) -> None:
             cfg.setdefault("llm", {})["model"] = model
             APP_CONFIG_PATH.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
             _print("模型已更新。")
+        elif c == "4" and not openrouter_only:
+            _print("Cookie 只会交给 yt-dlp 读取你本机浏览器已可访问的页面信息；不会下载视频，不会绕过权限。")
+            if _confirm("确认启用 Chrome Cookie？", default_yes=False):
+                cfg = load_app_config()
+                cfg.setdefault("advanced", {})["use_cookie"] = True
+                cfg.setdefault("advanced", {})["cookies_from_browser"] = "chrome"
+                cfg.setdefault("advanced", {})["cookie_file"] = ""
+                APP_CONFIG_PATH.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
+                _print("已启用 Chrome Cookie 辅助 yt-dlp。")
+        elif c == "5" and not openrouter_only:
+            cfg = load_app_config()
+            cfg.setdefault("advanced", {})["use_cookie"] = False
+            cfg.setdefault("advanced", {})["cookies_from_browser"] = ""
+            cfg.setdefault("advanced", {})["cookie_file"] = ""
+            APP_CONFIG_PATH.write_text(yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            _print("已关闭 Cookie。")
 
 
 def advanced_menu() -> None:
     _print("高级 CLI：")
-    _print("- python -m src.main plan")
-    _print("- python -m src.main search")
-    _print("- python -m src.main analyze-url")
-    _print("- python -m src.main filter")
-    _print("- python -m src.main export")
-    _print("- python -m src.main run-task")
+    _print("- python3 -m src.main plan")
+    _print("- python3 -m src.main search")
+    _print("- python3 -m src.main analyze-url")
+    _print("- python3 -m src.main filter")
+    _print("- python3 -m src.main export")
+    _print("- python3 -m src.main run-task")
     _print("")
     _print("详细说明见 docs/advanced_cli.md")
 

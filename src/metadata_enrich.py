@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import isodate
-from dotenv import load_dotenv
 
+from .env_loader import load_dotenv
 from .utils import (
     PROJECT_ROOT,
     append_error,
@@ -24,6 +24,8 @@ from .utils import (
 def youtube_api_key() -> Optional[str]:
     load_dotenv(PROJECT_ROOT / ".env")
     k = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if "your_" in k or "optional_" in k:
+        k = ""
     return k or None
 
 
@@ -56,7 +58,9 @@ def enrich_records(records: List[Dict[str, Any]], api_key: str) -> List[Dict[str
         if not vid:
             continue
         vid = str(vid)
-        cand = blank_candidate(**row, video_id=vid)
+        base = dict(row)
+        base["video_id"] = vid
+        cand = blank_candidate(**base)
         if vid in fixed:
             fixed[vid] = merge_candidates(fixed[vid], cand)
         else:

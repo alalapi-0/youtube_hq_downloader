@@ -7,9 +7,11 @@
 ## 快速开始
 
 ```bash
-python -m pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
 cp .env.example .env
-python run.py
+python3 run.py
 ```
 
 在 `.env` 中填写：
@@ -19,11 +21,11 @@ OPENROUTER_API_KEY=your_openrouter_api_key_here
 YOUTUBE_API_KEY=optional_youtube_api_key_here
 ```
 
-OpenRouter 用于 AI 搜索计划、语义复筛和反馈分析。YouTube API 是可选项；未配置时，系统会提示搜索能力受限，但不会崩溃。
+OpenRouter 用于 AI 搜索计划、语义复筛和反馈分析。YouTube API 是可选项；未配置时，系统会自动尝试 `yt-dlp` 搜索降级模式，不会下载视频。
 
 ## 推荐用法
 
-1. 运行 `python run.py`
+1. 运行 `python3 run.py`
 2. 选择「开始新的寻源任务」
 3. 输入自然语言需求
 4. 等待生成 `review_sheet.csv`
@@ -66,7 +68,7 @@ output/tasks/task_YYYYMMDD_NNN/
 ## 没有 Key 会怎样
 
 - 没有 `OPENROUTER_API_KEY`：AI 搜索计划和语义筛选不可用，系统会提示配置，也允许规则模式继续。
-- 没有 `YOUTUBE_API_KEY`：自动关键词搜索能力受限；可先配置 Key，或用高级 CLI 分析已有 URL 列表。
+- 没有 `YOUTUBE_API_KEY`：自动改用 `yt-dlp` 搜索降级模式；可在设置中显式启用 Chrome Cookie 辅助读取你本机已可访问的页面信息。
 - 没有 `yt-dlp`：跳过 4K 格式探测，只使用已有 metadata 和文本证据。
 
 ## 人工反馈
@@ -83,12 +85,12 @@ output/tasks/task_YYYYMMDD_NNN/
 普通用户不需要使用这些命令。高级用户仍可运行：
 
 ```bash
-python -m src.main plan
-python -m src.main search
-python -m src.main analyze-url
-python -m src.main filter
-python -m src.main export
-python -m src.main run-task
+python3 -m src.main plan
+python3 -m src.main search
+python3 -m src.main analyze-url
+python3 -m src.main filter
+python3 -m src.main export
+python3 -m src.main run-task
 ```
 
 详见 `docs/advanced_cli.md`。

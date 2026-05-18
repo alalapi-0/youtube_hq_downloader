@@ -5,8 +5,6 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from . import exporters
 from . import filters as filters_mod
 from . import format_probe
@@ -18,6 +16,7 @@ from . import llm_strategy_optimizer as strat
 from . import metadata_enrich
 from . import youtube_search
 from .cookie_loader import load_cookie_settings
+from .env_loader import load_dotenv
 from .core.config import FILTERS_CONFIG_PATH, LABELS_CONFIG_PATH, openrouter_api_key, youtube_api_key
 from .core.pipeline import import_feedback_for_task, run_new_task
 from .core.task import PipelineOptions
@@ -97,13 +96,18 @@ def cmd_plan(ns: argparse.Namespace) -> int:
 def cmd_search(ns: argparse.Namespace) -> int:
     _root()
     key = youtube_api_key()
-    if not key:
-        print("[search] WARN: 未检测到 YOUTUBE_API_KEY，无法自动按关键词搜索；写出空候选文件。", file=sys.stderr)
-        write_jsonl(Path(ns.output).resolve(), [])
-        return 0
     task_path = Path(ns.task).resolve()
     outp = Path(ns.output).resolve()
-    rows = youtube_search.run_search_plan(task_path, key)
+    if key:
+        rows = youtube_search.run_search_plan(task_path, key)
+    else:
+        print("[search] WARN: 未检测到 YOUTUBE_API_KEY，改用 yt-dlp 搜索降级模式。", file=sys.stderr)
+        rows, warnings = youtube_search.run_search_plan_ytdlp(
+            task_path,
+            cookie_settings=load_cookie_settings(PROJECT_ROOT / "config" / "app.yaml"),
+        )
+        for warning in warnings:
+            print(f"[search] WARN: {warning}", file=sys.stderr)
     normalized = [coerce_candidate(r) for r in rows]
     write_jsonl(outp, normalized)
     print(f"[search] wrote {len(normalized)} rows -> {outp}")
@@ -492,7 +496,7 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("--use-llm", default="false")
     pp.set_defaults(func=cmd_plan)
 
-    ps = sub.add_parser("search", help="search_plan.yaml → candidates jsonl（需 Data API Key）")
+    ps = sub.add_parser("search", help="search_plan.yaml → candidates jsonl（优先 Data API，缺失时用 yt-dlp 降级）")
     ps.add_argument("--task", required=True)
     ps.add_argument("--output", required=True)
     ps.set_defaults(func=cmd_search)

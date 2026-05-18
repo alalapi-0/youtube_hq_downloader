@@ -1,9 +1,11 @@
 # 快速开始
 
 ```bash
-python -m pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements.txt
 cp .env.example .env
-python run.py
+python3 run.py
 ```
 
 打开 `.env`，填写：
@@ -12,6 +14,8 @@ python run.py
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 YOUTUBE_API_KEY=optional_youtube_api_key_here
 ```
+
+`YOUTUBE_API_KEY` 可以留空。留空时系统会尝试使用 `yt-dlp` 搜索和读取公开元数据；如果你需要使用本机 Chrome 已登录状态，可在控制台「设置」里显式启用 Chrome Cookie。
 
 然后在控制台选择「开始新的寻源任务」，输入自然语言需求。
 
