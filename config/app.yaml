@@ -33,6 +33,35 @@ hard_constraints:
   reject_if_missing_4k_evidence: true
   reject_if_missing_duration: true
   reject_if_missing_publish_date: true
+  require_commercial_feature: true
+  reject_if_missing_commercial_feature: true
+  commercial_feature_terms:
+  - this video contains an advertisement
+  - advertisement
+  - commercial
+  - campaign
+  - brand film
+  - product film
+  - hero film
+  - agency:
+  - creative director
+  - art director
+  - agency producer
+  - production company:
+  - director:
+  - producer:
+  - dop
+  - dp:
+  - editor:
+  - colorist
+  - post:
+  - vfx
+  - packshot
+  - still life
+  - hero product
+vimeo:
+  use_oembed_metadata: true
+  oembed_timeout_seconds: 10
 tasks:
   output_root: output/tasks
   default_category: campaigns

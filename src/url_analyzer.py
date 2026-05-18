@@ -256,6 +256,13 @@ def _analysis_template(row: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, An
             "passed": row.get("hard_constraint_passed"),
             "reject_reasons": _as_list(row.get("hard_constraint_reject_reasons")),
         },
+        "commercial_features": {
+            "passed": row.get("commercial_feature_passed"),
+            "evidence": str(row.get("commercial_feature_evidence") or ""),
+            "contains_advertisement": row.get("contains_advertisement"),
+        },
+        "vimeo_oembed": row.get("vimeo_oembed") if isinstance(row.get("vimeo_oembed"), dict) else {},
+        "vimeo_oembed_status": str(row.get("vimeo_oembed_status") or ""),
         "source_context": {
             "query_used": _source_query(row),
             "category": str(row.get("category") or ""),

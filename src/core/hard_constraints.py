@@ -14,10 +14,41 @@ DEFAULT_HARD_CONSTRAINTS = {
     "reject_if_missing_4k_evidence": True,
     "reject_if_missing_duration": True,
     "reject_if_missing_publish_date": True,
+    "require_commercial_feature": True,
+    "reject_if_missing_commercial_feature": True,
+    "commercial_feature_terms": [
+        "this video contains an advertisement",
+        "advertisement",
+        "commercial",
+        "campaign",
+        "brand film",
+        "product film",
+        "hero film",
+        "agency:",
+        "creative director",
+        "art director",
+        "agency producer",
+        "production company:",
+        "director:",
+        "producer:",
+        "dop",
+        "dp:",
+        "editor:",
+        "colorist",
+        "post:",
+        "vfx",
+        "packshot",
+        "still life",
+        "hero product",
+    ],
 }
 
 FOUR_K_RE = re.compile(r"\b(?:4k|2160p|uhd|ultra\s*hd|3840\s*x\s*2160|4096\s*x\s*2160)\b", re.I)
 LOW_HEIGHT_RE = re.compile(r"\b(?:360p|480p|540p|720p|1080p|1440p|2k)\b", re.I)
+SEASON_CAMPAIGN_RE = re.compile(
+    r"\b(?:(?:fall|spring|summer|winter|holiday)\s+20\d{2}\s+campaign|(?:fw|ss)\s*20\d{2})\b",
+    re.I,
+)
 
 
 def hard_constraints_from_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -186,6 +217,61 @@ def _check_publish_date(row: Dict[str, Any], constraints: Dict[str, Any], *, tod
     return ["published_too_old"] if published < cutoff else []
 
 
+def _commercial_text(row: Dict[str, Any]) -> str:
+    values: List[str] = []
+    for key in (
+        "title",
+        "description",
+        "description_snippet",
+        "llm_notes",
+        "query_used",
+        "brand",
+        "channel_title",
+        "commercial_feature_evidence",
+        "advertisement_evidence",
+    ):
+        values.append(str(row.get(key) or ""))
+    oembed = row.get("vimeo_oembed")
+    if isinstance(oembed, dict):
+        values.extend(str(oembed.get(key) or "") for key in ("title", "author_name"))
+    return "\n".join(values)
+
+
+def _commercial_feature_hits(row: Dict[str, Any], constraints: Dict[str, Any]) -> List[str]:
+    text = _commercial_text(row).lower()
+    hits: List[str] = []
+    for term in constraints.get("commercial_feature_terms") or DEFAULT_HARD_CONSTRAINTS["commercial_feature_terms"]:
+        needle = str(term or "").strip().lower()
+        if needle and needle in text:
+            hits.append(needle)
+    if SEASON_CAMPAIGN_RE.search(text):
+        hits.append("season_campaign")
+    if row.get("contains_advertisement") is True or row.get("is_advertisement") is True or row.get("advertisement_disclosure") is True:
+        hits.append("advertisement_disclosure")
+    seen: set[str] = set()
+    unique: List[str] = []
+    for hit in hits:
+        if hit in seen:
+            continue
+        seen.add(hit)
+        unique.append(hit)
+    return unique
+
+
+def _check_commercial_feature(row: Dict[str, Any], constraints: Dict[str, Any]) -> List[str]:
+    if not constraints.get("require_commercial_feature", True):
+        return []
+    hits = _commercial_feature_hits(row, constraints)
+    if hits:
+        row["commercial_feature_evidence"] = row.get("commercial_feature_evidence") or ", ".join(hits[:8])
+        row["commercial_feature_passed"] = True
+        return []
+    row["commercial_feature_passed"] = False
+    if constraints.get("reject_if_missing_commercial_feature", True):
+        return ["missing_commercial_feature"]
+    return []
+
+
 def apply_hard_constraints(
     rows: Iterable[Dict[str, Any]],
     constraints: Dict[str, Any],
@@ -203,6 +289,7 @@ def apply_hard_constraints(
         reasons.extend(_check_resolution(row, constraints))
         reasons.extend(_check_duration(row, constraints))
         reasons.extend(_check_publish_date(row, constraints, today=today))
+        reasons.extend(_check_commercial_feature(row, constraints))
         if reasons:
             uniq = sorted(set(reasons))
             row["hard_constraint_passed"] = False

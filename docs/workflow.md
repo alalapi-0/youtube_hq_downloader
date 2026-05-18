@@ -6,6 +6,8 @@
 自然语言需求
   -> OpenRouter Web Search 查找真实视频 URL
   -> 只保留 Vimeo 视频页 URL
+  -> Vimeo oEmbed 补全公开标题/描述/时长/上传日期
+  -> 硬性条件过滤
   -> 本地查重
   -> 生成结构化 URL 记录
   -> 导出人工审核表
@@ -14,7 +16,7 @@
   -> 生成下一轮搜索建议
 ```
 
-系统不下载视频文件，也不再使用本地脚本或 yt-dlp 作为搜索兜底。搜索 URL 的唯一在线能力来自 OpenRouter Web Search，且当前只允许 `vimeo.com` 视频页进入结果。
+系统不下载视频文件，也不再使用本地脚本或 yt-dlp 作为搜索兜底。搜索 URL 的唯一在线能力来自 OpenRouter Web Search，且当前只允许 `vimeo.com` 视频页进入结果。搜索完成后会尝试读取 Vimeo 公开 oEmbed 元数据，这一步不需要 Cookie 或 API Key，也不消耗 OpenRouter token。
 
 ## 硬性条件
 
@@ -24,6 +26,7 @@
 - 必须有 4K / 2160p / UHD 证据
 - 必须能确认时长不超过 60 秒
 - 必须能确认发布时间在最近两年内
+- 必须能看到广告/商业片特征，例如 `advertisement`、`commercial`、`campaign`、`product film`、`Agency:`、`Creative Director`、`Art Director`、`Director:`、`Production Company:`、`DOP`、`Editor:`、`Colorist`、`Post:`、`VFX`
 
 缺少任一证据时会被丢弃，原因会写入任务目录的 `rejected.jsonl` 和 `run_summary.md`。
 

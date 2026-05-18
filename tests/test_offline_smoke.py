@@ -40,6 +40,7 @@ def _hard_ok(**overrides: object) -> dict:
         "resolution_evidence": "4K / UHD",
         "duration_evidence": "Duration 0:45",
         "date_evidence": "Published recently",
+        "commercial_feature_evidence": "Campaign product film with Agency and Production Company credits",
     }
     row.update(overrides)
     return row
@@ -199,6 +200,59 @@ class OfflineSmoke(unittest.TestCase):
         self.assertGreaterEqual(stats["missing_4k_evidence"], 1)
         self.assertGreaterEqual(stats["missing_duration"], 1)
         self.assertGreaterEqual(stats["missing_publish_date"], 1)
+
+    def test_pipeline_drops_missing_commercial_feature(self) -> None:
+        from src.core.pipeline import run_new_task
+        from src.core.task import PipelineOptions
+
+        stamp = str(time.time_ns())[-8:]
+        with tempfile.TemporaryDirectory() as d:
+            candidates = Path(d) / "candidates.jsonl"
+            _write_jsonl(
+                candidates,
+                [
+                    {
+                        "video_url": f"https://vimeo.com/61{stamp}",
+                        "title": "Luxury product film 4K campaign",
+                        **_hard_ok(),
+                    },
+                    {
+                        "video_url": f"https://vimeo.com/62{stamp}",
+                        "title": "Nice visual montage 4K",
+                        **_hard_ok(commercial_feature_evidence="", description="Abstract travel clip"),
+                    },
+                ],
+            )
+            result = run_new_task(
+                "我要找 Vimeo 4K 商业广告",
+                PipelineOptions(offline_candidates_path=candidates),
+            )
+        self.assertEqual(result.summary["total_candidates"], 2)
+        self.assertEqual(result.summary["hard_constraint_rejected_count"], 1)
+        self.assertEqual(result.summary["final_count"], 1)
+        self.assertGreaterEqual(result.summary["hard_constraint_reject_stats"]["missing_commercial_feature"], 1)
+
+    def test_vimeo_oembed_merge_populates_page_metadata(self) -> None:
+        from src.vimeo_oembed import merge_vimeo_oembed_metadata
+
+        row = {"video_url": "https://vimeo.com/1117607677"}
+        merged = merge_vimeo_oembed_metadata(
+            row,
+            {
+                "title": "COACH - Revive Your Courage",
+                "author_name": "Jovan Todorovic",
+                "author_url": "https://vimeo.com/jovantodorovic",
+                "description": "Coach Fall 2025 Campaign | Agency: Ape_CC | Production Company: SMUGGLER",
+                "duration": 60,
+                "upload_date": "2025-09-10 18:30:12",
+                "video_id": 1117607677,
+                "thumbnail_url": "https://i.vimeocdn.com/video/example.jpg",
+            },
+        )
+        self.assertEqual(merged["duration_seconds"], 60)
+        self.assertEqual(merged["published_at"], "2025-09-10")
+        self.assertIn("Agency", merged["description"])
+        self.assertEqual(merged["channel_title"], "Jovan Todorovic")
 
     def test_local_dedupe_marks_current_duplicates(self) -> None:
         from src.core.dedupe import dedupe_records

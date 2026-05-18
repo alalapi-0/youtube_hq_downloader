@@ -4,7 +4,7 @@
 
 它的目标很简单：用户输入自然语言需求，系统让大模型上网搜索 Vimeo 公开视频页面，提取真实 URL，做本地查重，然后导出人工审核表。它不是视频下载器，也不批量下载视频文件。
 
-当前硬性条件已经写入主流程：只保留 Vimeo 视频页、必须有 4K/2160p/UHD 证据、时长不超过 60 秒、发布时间在最近两年内。证据不足的候选会被丢弃。
+当前硬性条件已经写入主流程：只保留 Vimeo 视频页、必须有 4K/2160p/UHD 证据、时长不超过 60 秒、发布时间在最近两年内，并且页面文本要有广告/商业片特征，例如 advertisement、commercial、campaign、product film、Agency、Creative Director、Production Company 等。证据不足的候选会被丢弃。
 
 ## 快速开始
 
@@ -37,7 +37,7 @@ OPENROUTER_API_KEY=your_openrouter_api_key_here
 示例需求：
 
 ```text
-我要找 Vimeo 上的高端奢侈品官方广告，任意奢侈品牌都可以，优先展示商品，画质要求 4K，时长 60 秒以内，发布时间两年内，排除 AI、review、unboxing、vlog。
+我要找 Vimeo 上的高端奢侈品官方广告，任意奢侈品牌都可以，优先展示商品，画质要求 4K，时长 60 秒以内，发布时间两年内。优先页面带 advertisement、campaign、commercial、product film、Agency、Creative Director、Production Company、Director、DOP、Colorist、Post/VFX 等广告制作特征，排除 AI、review、unboxing、vlog。
 ```
 
 ## 输出在哪里

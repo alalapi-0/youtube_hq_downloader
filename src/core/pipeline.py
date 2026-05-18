@@ -14,6 +14,7 @@ from ..llm.feedback_analyzer import analyze_feedback_with_openrouter
 from ..llm.web_url_scout import is_vimeo_video_url, scout_urls_with_openrouter
 from ..llm.openrouter_client import OpenRouterError
 from ..utils import clean_for_serialization, clean_text, coerce_candidate, read_jsonl, write_jsonl
+from ..vimeo_oembed import enrich_vimeo_oembed_rows
 from .config import LABELS_CONFIG_PATH, load_app_config, openrouter_api_key, url_analysis_compat_config
 from .paths import create_task_dir, task_paths, write_latest_task
 from .task import PipelineOptions, PipelineResult
@@ -131,6 +132,18 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
     found_rows, non_vimeo_dropped = _keep_vimeo_only(found_rows)
     if non_vimeo_dropped:
         warnings.append(f"已丢弃 {non_vimeo_dropped} 条非 Vimeo URL。当前版本只保留 vimeo.com 视频页。")
+    vimeo_cfg = app_config.get("vimeo") if isinstance(app_config.get("vimeo"), dict) else {}
+    oembed_stats: Dict[str, int] = {"total": len(found_rows), "ok": 0, "failed": 0, "skipped": len(found_rows)}
+    if options.use_network and not options.offline_candidates_path and vimeo_cfg.get("use_oembed_metadata", True):
+        found_rows, oembed_stats, oembed_warnings = enrich_vimeo_oembed_rows(
+            found_rows,
+            enabled=True,
+            timeout_seconds=int(vimeo_cfg.get("oembed_timeout_seconds") or 10),
+        )
+        if oembed_warnings:
+            warnings.extend(oembed_warnings[:10])
+            if len(oembed_warnings) > 10:
+                warnings.append(f"还有 {len(oembed_warnings) - 10} 条 Vimeo oEmbed 读取失败已省略显示。")
     write_jsonl(paths["llm_found_urls"], found_rows)
 
     constrained_rows, hard_rejected_rows, hard_stats = apply_hard_constraints(
@@ -140,7 +153,7 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
     if hard_rejected_rows:
         warnings.append(
             "已按硬性条件丢弃 "
-            f"{len(hard_rejected_rows)} 条：必须 Vimeo、4K/2160p/UHD、60 秒以内、发布时间两年内。"
+            f"{len(hard_rejected_rows)} 条：必须 Vimeo、4K/2160p/UHD、60 秒以内、发布时间两年内，且有广告/商业片特征。"
         )
 
     unique_rows, duplicate_rows, dedupe_stats = dedupe_records(constrained_rows, exclude_task_dir=task_dir)
@@ -182,6 +195,7 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         "non_vimeo_dropped": non_vimeo_dropped,
         "hard_constraint_rejected_count": len(hard_rejected_rows),
         "hard_constraint_reject_stats": hard_stats,
+        "vimeo_oembed": oembed_stats,
         "rejected_count": len(hard_rejected_rows) + len(duplicate_rows),
         "review_sheet_csv": str(paths["review_sheet_csv"]),
         "review_sheet_md": str(paths["review_sheet_md"]),

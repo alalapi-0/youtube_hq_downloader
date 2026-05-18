@@ -85,7 +85,7 @@ def show_main_menu() -> None:
 
 def _read_user_request() -> str:
     _print("请用自然语言描述你要找什么视频。")
-    _print("例如：我要找 Vimeo 上的高端奢侈品官方广告，优先 Dior、Prada、Chanel、Gucci，要求 4K，60 秒以内，发布时间两年内，排除 AI、review、unboxing、vlog。")
+    _print("例如：我要找 Vimeo 上的高端奢侈品官方广告，要求 4K，60 秒以内，发布时间两年内，页面最好有 advertisement、campaign、Agency、Production Company、Director、DOP、Post/VFX 等广告制作信息，排除 AI、review、unboxing、vlog。")
     _print("输入完成后按 Enter；如果要多行输入，最后单独输入 END。")
     first = input("> ").rstrip()
     if first.strip().upper() != "END":
@@ -127,6 +127,7 @@ def start_new_task() -> Path | None:
     target = int(target_raw) if target_raw.isdigit() else int(default_count)
     _print("")
     _print("即将通过 OpenRouter Web Search 只搜索 Vimeo 视频 URL，并做本地查重。")
+    _print("硬性条件：Vimeo、4K/2160p/UHD、60 秒以内、两年内、广告/商业片特征。")
     result = run_new_task(
         user_request,
         PipelineOptions(ai_enabled=True, max_results_per_query=target),

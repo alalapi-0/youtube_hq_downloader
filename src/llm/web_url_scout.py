@@ -28,6 +28,19 @@ def _strip_fences(raw: str) -> str:
     return text.strip()
 
 
+def _as_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None or value == "":
+        return None
+    text = str(value).strip().lower()
+    if text in {"true", "yes", "y", "1", "是"}:
+        return True
+    if text in {"false", "no", "n", "0", "否"}:
+        return False
+    return None
+
+
 def _parse_candidates(raw: str) -> List[Dict[str, Any]]:
     text = _strip_fences(raw)
     try:
@@ -55,6 +68,12 @@ def _parse_candidates(raw: str) -> List[Dict[str, Any]]:
         resolution_evidence = clean_text(item.get("resolution_evidence") or item.get("quality_evidence") or "")
         duration_evidence = clean_text(item.get("duration_evidence") or item.get("duration") or "")
         date_evidence = clean_text(item.get("date_evidence") or "")
+        commercial_feature_evidence = clean_text(
+            item.get("commercial_feature_evidence")
+            or item.get("advertisement_evidence")
+            or item.get("campaign_evidence")
+            or ""
+        )
         rows.append(
             {
                 "source_platform": "vimeo",
@@ -80,6 +99,8 @@ def _parse_candidates(raw: str) -> List[Dict[str, Any]]:
                 "duration_evidence": duration_evidence,
                 "published_at": published_at,
                 "date_evidence": date_evidence,
+                "commercial_feature_evidence": commercial_feature_evidence,
+                "contains_advertisement": _as_bool(item.get("contains_advertisement") or item.get("is_advertisement")),
             }
         )
     return rows
@@ -108,14 +129,27 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
             "resolution": "must be explicitly 4K / 2160p / UHD; discard if only 720p/1080p/HD or unknown",
             "duration": "must be 60 seconds or shorter; discard if duration is unknown or longer",
             "published_at": "must be within the last 2 years; discard if publish/upload date is unknown or older",
+            "commercial_feature": (
+                "must have explicit advertisement/campaign/commercial/product-film evidence, or production credits "
+                "such as Agency, Creative Director, Art Director, Director, Production Company, DOP, Editor, Colorist, Post, or VFX"
+            ),
         },
+        "search_focus": [
+            'site:vimeo.com "This video contains an advertisement" "4K"',
+            'site:vimeo.com "campaign" "4K" "Agency"',
+            'site:vimeo.com "product film" "4K" "Production Company"',
+            'site:vimeo.com "commercial" "4K" "Director"',
+            'site:vimeo.com "Fall 2025 Campaign" "4K"',
+        ],
         "rules": [
             "Use web search. Do not invent URLs.",
             "Return only real Vimeo video page URLs from vimeo.com.",
             "Never return YouTube, youtu.be, Shorts, playlist, channel, search, Google, or non-Vimeo URLs.",
             "Only include candidates with evidence that the page/video is 4K, 60 seconds or shorter, and published/uploaded within the last 2 years.",
-            "If any of resolution, duration, or publish date cannot be verified from search/page evidence, do not include that URL.",
+            "Only include candidates with commercial advertising evidence: advertisement badge, campaign/commercial/product film wording, or production-credit metadata.",
+            "If any of resolution, duration, publish date, or commercial feature evidence cannot be verified from search/page evidence, do not include that URL.",
             "Prefer official brand ads, campaign films, product films, fragrance films, jewelry/watch films, luxury commercials.",
+            "Strong positive page-text signals include: Agency:, Creative Director, Art Director, Director:, Production Company:, DOP, Editor:, Colorist, Post:, VFX, Fall/Spring/Summer campaign.",
             "Avoid reviews, unboxing, vlogs, AI generated content, compilations, reels/showreels unless the result page is the actual ad video.",
             "Return JSON only with key candidates.",
         ],
@@ -132,6 +166,8 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
             "duration_evidence": "short text evidence for duration",
             "published_at": "YYYY-MM-DD publish/upload date, must be within last 2 years",
             "date_evidence": "short text evidence for publish/upload date",
+            "contains_advertisement": "true only if page/search evidence says it contains an advertisement",
+            "commercial_feature_evidence": "short evidence for advertisement/campaign/commercial/product-film/production-credit status",
             "confidence": "0-1 if inferable",
         },
     }
@@ -142,7 +178,8 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
                 "You are an advertising video URL scout. Use web search to find real Vimeo video URLs. "
                 "Return ONLY JSON, no markdown, no commentary. Never fabricate URLs. "
                 "YouTube and all non-Vimeo URLs are forbidden. "
-                "Every candidate must satisfy hard constraints: Vimeo only, explicit 4K/2160p/UHD evidence, duration <= 60 seconds, and published within the last 2 years."
+                "Every candidate must satisfy hard constraints: Vimeo only, explicit 4K/2160p/UHD evidence, "
+                "duration <= 60 seconds, published within the last 2 years, and explicit commercial advertising evidence."
             ),
         },
         {"role": "user", "content": "WEB_URL_SCOUT_REQUEST:\n```yaml\n" + yaml.safe_dump(prompt, allow_unicode=True, sort_keys=False) + "\n```"},

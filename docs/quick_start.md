@@ -19,7 +19,7 @@ OPENROUTER_API_KEY=your_openrouter_api_key_here
 然后在控制台选择「开始新的寻源任务」，输入需求，例如：
 
 ```text
-我要找 Vimeo 上的高端奢侈品官方广告，任意奢侈品牌都可以，优先展示商品，排除 AI、review、unboxing、vlog，时长 60 秒以内，画质要求 4K，发布时间两年内。
+我要找 Vimeo 上的高端奢侈品官方广告，任意奢侈品牌都可以，优先展示商品，排除 AI、review、unboxing、vlog，时长 60 秒以内，画质要求 4K，发布时间两年内。优先页面描述里有 advertisement、campaign、Agency、Creative Director、Production Company、Director、DOP、Colorist、Post/VFX 等广告制作信息。
 ```
 
 任务完成后打开：
