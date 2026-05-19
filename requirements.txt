@@ -1,4 +1,3 @@
-python-dotenv
+yt-dlp
 PyYAML
-requests
 isodate

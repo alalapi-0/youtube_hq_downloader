@@ -5,16 +5,10 @@ import sys
 from pathlib import Path
 
 from . import review_feedback_analyzer, review_schema, search_strategy_from_feedback, url_analyzer
-from .core.config import LABELS_CONFIG_PATH, openrouter_api_key
+from .core.config import LABELS_CONFIG_PATH
 from .core.pipeline import import_feedback_for_task, run_new_task
 from .core.task import PipelineOptions
-from .env_loader import load_dotenv
 from .utils import PROJECT_ROOT
-
-
-def _root() -> Path:
-    load_dotenv(PROJECT_ROOT / ".env")
-    return PROJECT_ROOT
 
 
 def _truthy_flag(val: str | bool | None) -> bool:
@@ -23,39 +17,41 @@ def _truthy_flag(val: str | bool | None) -> bool:
     return str(val or "").strip().lower() in ("1", "true", "yes", "on", "y")
 
 
-def cmd_run_task(ns: argparse.Namespace) -> int:
-    _root()
-    if ns.request:
-        request_text = str(ns.request)
-    elif ns.request_file:
-        request_text = Path(ns.request_file).read_text(encoding="utf-8")
-    else:
-        print("[run-task] ERROR: 请提供 --request 或 --request-file", file=sys.stderr)
-        return 2
+def _read_search_urls(ns: argparse.Namespace) -> list[str]:
+    urls: list[str] = []
+    for value in ns.search_url or []:
+        if str(value).strip():
+            urls.append(str(value).strip())
+    if ns.search_url_file:
+        path = Path(ns.search_url_file).expanduser().resolve()
+        urls.extend(line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+    return urls
 
-    if not ns.offline_candidates and not openrouter_api_key():
-        print("[run-task] ERROR: 未检测到 OPENROUTER_API_KEY。当前版本只通过 OpenRouter Web Search 搜索 URL。", file=sys.stderr)
-        return 2
 
+def cmd_collect(ns: argparse.Namespace) -> int:
+    urls = _read_search_urls(ns)
+    request_text = str(ns.note or "")
+    if not urls and not ns.offline_candidates:
+        print("[collect] ERROR: 请提供 --search-url 或 --search-url-file", file=sys.stderr)
+        return 2
     options = PipelineOptions(
-        ai_enabled=True,
+        search_page_urls=urls,
         offline_candidates_path=Path(ns.offline_candidates).resolve() if ns.offline_candidates else None,
-        max_results_per_query=int(ns.max_results) if str(ns.max_results or "").isdigit() else None,
+        max_entries_per_search_page=int(ns.max_entries) if str(ns.max_entries or "").isdigit() else None,
     )
     result = run_new_task(request_text, options)
-    print(f"[run-task] 任务完成：{result.task_dir}")
-    print(f"[run-task] 人工审核表：{result.summary.get('review_sheet_csv')}")
-    print(f"[run-task] 本地查重后保留：{result.summary.get('final_count', 0)}")
-    print(f"[run-task] 重复/无效：{result.summary.get('duplicate_count', 0)}")
+    print(f"[collect] 任务完成：{result.task_dir}")
+    print(f"[collect] 人工审核表：{result.summary.get('review_sheet_csv')}")
+    print(f"[collect] 采集 URL：{result.summary.get('collected_url_count', 0)}")
+    print(f"[collect] 通过硬过滤+查重：{result.summary.get('final_count', 0)}")
     for warning in result.warnings:
-        print(f"[run-task] WARN: {warning}", file=sys.stderr)
+        print(f"[collect] WARN: {warning}", file=sys.stderr)
     for error in result.errors:
-        print(f"[run-task] ERROR: {error}", file=sys.stderr)
+        print(f"[collect] ERROR: {error}", file=sys.stderr)
     return 2 if result.errors and not result.summary.get("final_count") else 0
 
 
 def cmd_import_task_feedback(ns: argparse.Namespace) -> int:
-    _root()
     task_dir = Path(ns.task_dir).resolve()
     review_csv = Path(ns.review_csv).resolve()
     if not task_dir.exists():
@@ -64,16 +60,13 @@ def cmd_import_task_feedback(ns: argparse.Namespace) -> int:
     if not review_csv.exists():
         print(f"[import-task-feedback] ERROR: review csv not found: {review_csv}", file=sys.stderr)
         return 2
-    result = import_feedback_for_task(task_dir, review_csv, use_ai=_truthy_flag(ns.ai))
+    result = import_feedback_for_task(task_dir, review_csv)
     print(f"[import-task-feedback] feedback={result['feedback_md']}")
     print(f"[import-task-feedback] next_search_plan={result['next_search_plan']}")
-    for warning in result.get("warnings") or []:
-        print(f"[import-task-feedback] WARN: {warning}", file=sys.stderr)
     return 0
 
 
 def cmd_export_review(ns: argparse.Namespace) -> int:
-    _root()
     analysis = Path(ns.analysis).resolve()
     if not analysis.exists():
         print(f"[export-review] ERROR: analysis not found: {analysis}", file=sys.stderr)
@@ -91,7 +84,6 @@ def cmd_export_review(ns: argparse.Namespace) -> int:
 
 
 def cmd_import_review(ns: argparse.Namespace) -> int:
-    _root()
     analysis = Path(ns.analysis).resolve()
     review_csv = Path(ns.review_csv).resolve()
     output = Path(ns.output).resolve()
@@ -117,7 +109,6 @@ def cmd_import_review(ns: argparse.Namespace) -> int:
 
 
 def cmd_analyze_feedback(ns: argparse.Namespace) -> int:
-    _root()
     inp = Path(ns.input).resolve()
     if not inp.exists():
         print(f"[analyze-feedback] ERROR: input not found: {inp}", file=sys.stderr)
@@ -137,7 +128,6 @@ def cmd_analyze_feedback(ns: argparse.Namespace) -> int:
 
 
 def cmd_strategy_from_feedback(ns: argparse.Namespace) -> int:
-    _root()
     feedback = Path(ns.feedback_json).resolve()
     reviewed = Path(ns.reviewed_jsonl).resolve()
     if not feedback.exists():
@@ -158,21 +148,21 @@ def cmd_strategy_from_feedback(ns: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Ad URL Scout：通过 OpenRouter Web Search 寻找广告/商品/品牌视频 URL，并做本地查重。"
+        description="Ad URL Scout：从 YouTube 搜索结果页批量采集视频 URL，用 yt-dlp 读取元数据并本地筛选。"
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    run = sub.add_parser("run-task", help="自然语言需求 → OpenRouter Web Search → 本地查重 → review_sheet.csv")
-    run.add_argument("--request", default="", help="自然语言寻源需求")
-    run.add_argument("--request-file", dest="request_file", default="", help="从文本文件读取寻源需求")
-    run.add_argument("--max-results", dest="max_results", default="", help="本轮最多保留多少个去重 URL")
-    run.add_argument("--offline-candidates", dest="offline_candidates", default="", help=argparse.SUPPRESS)
-    run.set_defaults(func=cmd_run_task)
+    collect = sub.add_parser("collect", help="YouTube 搜索结果页 URL → review_sheet.csv")
+    collect.add_argument("--search-url", action="append", default=[], help="YouTube 搜索结果页 URL，可重复传入")
+    collect.add_argument("--search-url-file", dest="search_url_file", default="", help="包含多个搜索结果页 URL 的文本文件，每行一个")
+    collect.add_argument("--max-entries", dest="max_entries", default="", help="每个搜索结果页最多读取多少条")
+    collect.add_argument("--note", default="", help="本轮备注，会写入任务目录")
+    collect.add_argument("--offline-candidates", dest="offline_candidates", default="", help=argparse.SUPPRESS)
+    collect.set_defaults(func=cmd_collect)
 
     feedback = sub.add_parser("import-task-feedback", help="导入某个 task 的人工审核表并生成反馈策略")
     feedback.add_argument("--task-dir", dest="task_dir", required=True)
     feedback.add_argument("--review-csv", dest="review_csv", required=True)
-    feedback.add_argument("--ai", default="true", help="是否使用 OpenRouter 总结反馈")
     feedback.set_defaults(func=cmd_import_task_feedback)
 
     export_review = sub.add_parser("export-review", help="从结构化结果重新导出人工审核表")

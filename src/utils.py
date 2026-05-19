@@ -163,9 +163,7 @@ def blank_candidate(**overrides: Any) -> Dict[str, Any]:
         "thumbnail_urls": [],
         "tags": [],
         "manual_review_status": "pending",
-        "llm_status": "pending",
-        "llm_relevant": None,
-        "llm_notes": "",
+        "collector_status": "pending",
         "confidence": None,
         "error": "",
     }

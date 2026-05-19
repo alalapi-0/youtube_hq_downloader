@@ -52,15 +52,14 @@ def write_latest_task(task_dir: Path) -> None:
 def task_paths(task_dir: Path) -> dict[str, Path]:
     return {
         "user_request": task_dir / "user_request.txt",
-        "search_plan": task_dir / "search_plan.yaml",
-        "web_search_raw": task_dir / "web_search_raw.txt",
-        "llm_found_urls": task_dir / "llm_found_urls.jsonl",
+        "search_pages": task_dir / "search_pages.txt",
+        "collected_urls": task_dir / "collected_urls.jsonl",
         "candidates_raw": task_dir / "candidates_raw.jsonl",
         "duplicates": task_dir / "duplicates.jsonl",
         "dedupe_report": task_dir / "dedupe_report.json",
         "url_analysis": task_dir / "url_analysis.jsonl",
         "rule_filtered": task_dir / "rule_filtered.jsonl",
-        "llm_filtered": task_dir / "llm_filtered.jsonl",
+        "filtered": task_dir / "filtered.jsonl",
         "final_candidates": task_dir / "final_candidates.jsonl",
         "rejected": task_dir / "rejected.jsonl",
         "review_sheet_csv": task_dir / "review_sheet.csv",

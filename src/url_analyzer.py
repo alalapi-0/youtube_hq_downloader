@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Tuple
 import isodate
 
 from .review_schema import default_manual_review
-from .utils import read_jsonl, sniff_description, write_jsonl
+from .utils import extract_video_id, read_jsonl, sniff_description, write_jsonl
 
 
 REVIEW_COLUMNS = [
@@ -25,8 +25,8 @@ REVIEW_COLUMNS = [
     "has_2160p_format",
     "query_used",
     "quality_score",
-    "llm_decision",
-    "llm_reason",
+    "filter_status",
+    "filter_reasons",
     "manual_status",
     "manual_passed",
     "manual_reject_reasons",
@@ -35,8 +35,6 @@ REVIEW_COLUMNS = [
     "reviewer",
     "reviewed_at",
 ]
-
-VIMEO_ID_PATTERN = re.compile(r"vimeo\.com/(?:[^/\s]+/)*(\d{6,})", re.I)
 
 
 def _as_int(value: Any) -> int | None:
@@ -128,8 +126,7 @@ def _video_id(row: Dict[str, Any], url: str) -> str:
     explicit = str(row.get("video_id") or "").strip()
     if explicit:
         return explicit
-    match = VIMEO_ID_PATTERN.search(url or "")
-    return match.group(1) if match else ""
+    return extract_video_id(url or "") or ""
 
 
 def _thumbnail_urls(row: Dict[str, Any]) -> List[str]:
@@ -161,14 +158,6 @@ def _source_query(row: Dict[str, Any]) -> str:
     if value:
         return value
     return "; ".join(str(x) for x in _as_list(row.get("matched_keywords")) if str(x).strip())
-
-
-def _llm_decision(row: Dict[str, Any]) -> str:
-    if row.get("llm_relevant") is True:
-        return "pass"
-    if row.get("llm_relevant") is False:
-        return "reject"
-    return str(row.get("llm_status") or "").strip()
 
 
 def _empty_webpage_metadata() -> Dict[str, Any]:
@@ -225,7 +214,7 @@ def _analysis_template(row: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, An
     return {
         "video_url": video_url,
         "video_id": vid,
-        "source_platform": "vimeo" if "vimeo.com" in video_url.lower() else str(row.get("source_platform") or ""),
+        "source_platform": "youtube" if _video_id(row, video_url) else str(row.get("source_platform") or ""),
         "title": str(row.get("title") or ""),
         "channel_title": str(row.get("channel_title") or ""),
         "channel_id": str(row.get("channel_id") or ""),
@@ -256,36 +245,29 @@ def _analysis_template(row: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, An
             "passed": row.get("hard_constraint_passed"),
             "reject_reasons": _as_list(row.get("hard_constraint_reject_reasons")),
         },
-        "commercial_features": {
-            "passed": row.get("commercial_feature_passed"),
-            "evidence": str(row.get("commercial_feature_evidence") or ""),
-            "contains_advertisement": row.get("contains_advertisement"),
-        },
-        "vimeo_oembed": row.get("vimeo_oembed") if isinstance(row.get("vimeo_oembed"), dict) else {},
-        "vimeo_oembed_status": str(row.get("vimeo_oembed_status") or ""),
         "source_context": {
             "query_used": _source_query(row),
             "category": str(row.get("category") or ""),
             "subcategory": str(row.get("subcategory") or ""),
             "brand": str(row.get("brand") or ""),
-            "source_stage": str(row.get("source_stage") or "openrouter_web_search"),
+            "source_stage": str(row.get("source_stage") or "youtube_search_page"),
             "search_task_id": str(row.get("search_task_id") or ""),
         },
         "auto_filter": {
             "rule_filter_passed": row.get("hard_filter_pass"),
             "rule_reject_reasons": _as_list(row.get("rejection_codes")),
-            "llm_decision": _llm_decision(row),
-            "llm_reason": str(row.get("llm_notes") or row.get("llm_reason") or ""),
+            "filter_status": "pass" if row.get("hard_constraint_passed") is True else "",
+            "filter_reasons": _as_list(row.get("hard_constraint_reject_reasons")),
             "quality_score": _as_float(row.get("quality_score") if row.get("quality_score") is not None else row.get("filter_score")),
         },
         "manual_review": manual,
         "analysis": {
-            "llm_feature_summary": str(row.get("llm_feature_analysis") or ""),
+            "feature_summary": str(row.get("feature_analysis") or ""),
             "likely_positive_features": _as_list(row.get("likely_positive_features")),
             "likely_negative_features": _as_list(row.get("likely_negative_features")),
             "search_keywords_suggested": _as_list(row.get("search_keywords_suggested")),
         },
-        "metadata_sources": ["openrouter_web_search"],
+        "metadata_sources": ["yt-dlp"],
         "errors": errors,
     }
 
@@ -348,8 +330,8 @@ def _review_row(rec: Dict[str, Any], *, include_existing_manual: bool = False) -
         "has_2160p_format": fmt.get("has_2160p_format"),
         "query_used": source.get("query_used") or "",
         "quality_score": auto.get("quality_score") if auto.get("quality_score") is not None else "",
-        "llm_decision": auto.get("llm_decision") or "",
-        "llm_reason": auto.get("llm_reason") or "",
+        "filter_status": auto.get("filter_status") or "",
+        "filter_reasons": ";".join(auto.get("filter_reasons") or []),
         "manual_status": manual.get("status") if include_existing_manual else "",
         "manual_passed": manual.get("passed") if include_existing_manual else "",
         "manual_reject_reasons": ";".join(manual.get("reject_reasons") or []) if include_existing_manual else "",
@@ -381,8 +363,8 @@ def export_review_sheet(
     md_lines = [
         "# Manual review sheet",
         "",
-        "| 序号 | 标题 | 频道 | URL | 品牌 | 时长 | 最大格式高度 | 自动评分 | LLM 判断 | 人工状态 | 人工拒绝原因 | 备注 |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| 序号 | 标题 | 频道 | URL | 品牌 | 时长 | 最大格式高度 | 过滤状态 | 人工状态 | 人工拒绝原因 | 备注 |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for idx, row in enumerate(rows, start=1):
         cells = [
@@ -393,8 +375,7 @@ def export_review_sheet(
             str(row.get("brand") or ""),
             str(row.get("duration_seconds") or ""),
             str(row.get("max_format_height") or ""),
-            str(row.get("quality_score") or ""),
-            str(row.get("llm_decision") or ""),
+            str(row.get("filter_status") or ""),
             str(row.get("manual_status") or ""),
             str(row.get("manual_reject_reasons") or ""),
             str(row.get("manual_notes") or ""),

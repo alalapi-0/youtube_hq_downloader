@@ -1,3 +1,0 @@
-# 仅在使用「从浏览器自动抓取 token」时需要安装
-# 安装: pip install -r requirements-browser.txt && playwright install chromium
-playwright>=1.40.0

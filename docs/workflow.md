@@ -1,36 +1,37 @@
 # 工作流
 
-当前版本的主线：
+当前版本主线：
 
 ```text
-自然语言需求
-  -> OpenRouter Web Search 查找真实视频 URL
-  -> 只保留 Vimeo 视频页 URL
-  -> Vimeo oEmbed 补全公开标题/描述/时长/上传日期
-  -> 硬性条件过滤
+你手动搜索 YouTube 并设置过滤器
+  -> 复制搜索结果页 URL
+  -> yt-dlp --flat-playlist 提取视频 URL
+  -> yt-dlp --dump-single-json 读取 metadata/formats
+  -> 本地硬过滤
   -> 本地查重
-  -> 生成结构化 URL 记录
-  -> 导出人工审核表
-  -> 人工标注
-  -> 分析反馈
-  -> 生成下一轮搜索建议
+  -> 导出 review_sheet.csv
 ```
 
-系统不下载视频文件，也不再使用本地脚本或 yt-dlp 作为搜索兜底。搜索 URL 的唯一在线能力来自 OpenRouter Web Search，且当前只允许 `vimeo.com` 视频页进入结果。搜索完成后会尝试读取 Vimeo 公开 oEmbed 元数据，这一步不需要 Cookie 或 API Key，也不消耗 OpenRouter token。
+## 为什么不用 API Key / 大模型
 
-如果严格搜索没有返回 URL，系统会自动进行一次“宽松 Vimeo 发现模式”重试：先找可能是广告、campaign、product film 的 Vimeo 视频页，再交给本地硬性条件过滤。这样不会因为搜索摘要缺少时长/发布日期/4K 字段就直接得到 0 条。
+这个项目现在不再调用 OpenRouter，也不要求 YouTube Data API Key。搜索动作由你在 YouTube 页面完成，程序负责批量收集和筛选，避免你一条一条复制视频链接。
 
 ## 硬性条件
 
-候选 URL 进入人工审核表前会经过硬闸门：
+候选进入审核表前会经过本地硬过滤：
 
-- 必须是 `vimeo.com` 视频页
-- 必须有 4K / 2160p / UHD 证据
-- 必须能确认时长不超过 60 秒
-- 必须能确认发布时间在最近两年内
-- 必须能看到广告/商业片特征，例如 `advertisement`、`commercial`、`campaign`、`product film`、`Agency:`、`Creative Director`、`Art Director`、`Director:`、`Production Company:`、`DOP`、`Editor:`、`Colorist`、`Post:`、`VFX`
+- 必须探测到 `2160p` 或更高格式
+- 必须能确认时长不超过 `60` 秒
+- 必须能确认发布时间在最近 `730` 天内
+- 标题/描述/频道不能包含配置中的负面词，例如 review、unboxing、vlog、behind the scenes、compilation
 
-缺少任一证据时会被丢弃，原因会写入任务目录的 `rejected.jsonl` 和 `run_summary.md`。
+不符合条件的记录会写入 `rejected.jsonl`。
+
+## 如果 YouTube 要求验证
+
+有时 `yt-dlp` 读取单条视频 metadata 时会遇到 `Sign in to confirm you’re not a bot`。这时可以在控制台选择「设置 Cookie」，启用 `cookies-from-browser chrome` 或手动提供 `cookies.txt`。
+
+Cookie 只用于读取你本机浏览器已经可访问的公开视频页面信息，不用于绕过权限，也不会下载视频。
 
 ## 任务目录
 
@@ -39,12 +40,4 @@
 - `review_sheet.csv`
 - `review_sheet.md`
 - `run_summary.md`
-- `duplicates.jsonl`
-
-`llm_found_urls.jsonl` 是大模型搜索返回的原始 URL 列表，`candidates_raw.jsonl` 是本地查重后的候选，`final_candidates.jsonl` 是导出审核表时使用的结构化记录。
-
-`web_search_raw.txt` 会保存 OpenRouter Web Search 的原始文本回复，方便排查“没有 URL”到底是模型没搜到、返回格式不对，还是后续过滤太严。
-
-## 没有 OpenRouter Key
-
-没有 `OPENROUTER_API_KEY` 时，控制台会提示你配置。当前版本没有规则搜索或本地搜索兜底，因此不会继续创建在线寻源任务。
+- `rejected.jsonl`

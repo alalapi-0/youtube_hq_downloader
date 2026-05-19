@@ -5,43 +5,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-import yaml
-
 from .. import review_feedback_analyzer, review_schema, search_strategy_from_feedback, url_analyzer
 from ..core.dedupe import dedupe_records
 from ..core.hard_constraints import apply_hard_constraints, hard_constraints_from_config
-from ..llm.feedback_analyzer import analyze_feedback_with_openrouter
-from ..llm.web_url_scout import is_vimeo_video_url, scout_urls_with_openrouter
-from ..llm.openrouter_client import OpenRouterError
 from ..utils import clean_for_serialization, clean_text, coerce_candidate, read_jsonl, write_jsonl
-from ..vimeo_oembed import enrich_vimeo_oembed_rows
-from .config import LABELS_CONFIG_PATH, load_app_config, openrouter_api_key, url_analysis_compat_config
+from ..youtube_collect import collect_search_page_urls, enrich_video_metadata, ytdlp_available
+from .config import LABELS_CONFIG_PATH, load_app_config, url_analysis_compat_config
 from .paths import create_task_dir, task_paths, write_latest_task
 from .task import PipelineOptions, PipelineResult
 
 
-def _write_yaml(path: Path, data: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(clean_for_serialization(data), allow_unicode=True, sort_keys=False), encoding="utf-8")
-
-
 def _read_rows(path: Path) -> List[Dict[str, Any]]:
     return [coerce_candidate(r) for r in read_jsonl(path)]
-
-
-def _row_url(row: Dict[str, Any]) -> str:
-    return str(row.get("canonical_url") or row.get("video_url") or row.get("url") or "")
-
-
-def _keep_vimeo_only(rows: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], int]:
-    kept: List[Dict[str, Any]] = []
-    dropped = 0
-    for row in rows:
-        if is_vimeo_video_url(_row_url(row)):
-            kept.append(row)
-        else:
-            dropped += 1
-    return kept, dropped
 
 
 def _summary_markdown(summary: Dict[str, Any]) -> str:
@@ -50,19 +25,20 @@ def _summary_markdown(summary: Dict[str, Any]) -> str:
         "",
         f"- 任务 ID：`{summary['task_id']}`",
         f"- 创建时间：{summary['created_at']}",
-        f"- AI Web Search 找到 URL：{summary['total_candidates']}",
-        f"- 硬性条件丢弃：{summary.get('hard_constraint_rejected_count', 0)}",
+        f"- 搜索结果页：{summary['search_page_count']}",
+        f"- 采集到视频 URL：{summary['collected_url_count']}",
+        f"- 元数据读取成功：{summary['metadata_success_count']}",
+        f"- 硬性条件丢弃：{summary['hard_constraint_rejected_count']}",
         f"- 本地查重后保留：{summary['final_count']}",
-        f"- 本地重复/无效：{summary.get('duplicate_count', 0)}",
+        f"- 本地重复/无效：{summary['duplicate_count']}",
         f"- 需要人工审核：{summary['final_count']}",
         "",
         "## 输出文件",
         f"- 人工审核表：`{summary['review_sheet_csv']}`",
         f"- Markdown 预览：`{summary['review_sheet_md']}`",
-        f"- AI 找到的原始 URL：`{summary.get('llm_found_urls_path', '')}`",
-        f"- Web Search 原始回复：`{summary.get('web_search_raw_path', '')}`",
+        f"- 采集到的原始 URL：`{summary['collected_urls_path']}`",
         f"- 结构化数据：`{summary['final_candidates_path']}`",
-        f"- 重复 URL：`{summary.get('duplicates_path', '')}`",
+        f"- 拒绝明细：`{summary['rejected_path']}`",
         "",
         "## 下一步",
     ]
@@ -85,11 +61,11 @@ def _write_summary(paths: Dict[str, Path], summary: Dict[str, Any]) -> None:
     paths["run_summary_md"].write_text(clean_text(_summary_markdown(clean_summary)), encoding="utf-8")
 
 
-def run_new_task(user_request: str, options: PipelineOptions | None = None) -> PipelineResult:
-    user_request = clean_text(user_request).strip()
+def run_new_task(user_request: str = "", options: PipelineOptions | None = None) -> PipelineResult:
     options = options or PipelineOptions()
     app_config = load_app_config()
-    hard_constraints = hard_constraints_from_config(app_config)
+    youtube_cfg = app_config.get("youtube") if isinstance(app_config.get("youtube"), dict) else {}
+    filters = hard_constraints_from_config(app_config)
     task_dir = create_task_dir(options.task_id)
     paths = task_paths(task_dir)
     warnings: List[str] = []
@@ -97,75 +73,55 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
     created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     task_id = task_dir.name
 
+    user_request = clean_text(user_request).strip()
+    search_urls = [clean_text(x).strip() for x in options.search_page_urls if clean_text(x).strip()]
     paths["user_request"].write_text(user_request + "\n", encoding="utf-8")
+    paths["search_pages"].write_text("\n".join(search_urls) + ("\n" if search_urls else ""), encoding="utf-8")
 
-    search_plan = {
-        "project": {"name": "ad-url-scout"},
-        "mode": "openrouter_web_search_only",
-        "user_request": user_request,
-        "web_search": app_config.get("web_search") or {},
-        "hard_constraints": hard_constraints,
-    }
-    if options.max_results_per_query:
-        search_plan.setdefault("web_search", {})["target_url_count"] = int(options.max_results_per_query)
-    _write_yaml(paths["search_plan"], search_plan)
+    missing_ytdlp = not ytdlp_available() and not options.offline_candidates_path
+    if missing_ytdlp:
+        errors.append("未检测到 yt-dlp。请先执行：python3 -m pip install -r requirements.txt")
 
-    found_rows: List[Dict[str, Any]] = []
-    search_meta: Dict[str, Any] = {}
+    collected_rows: List[Dict[str, Any]] = []
+    collect_stats: Dict[str, int] = {"search_pages": len(search_urls), "entries_seen": 0, "video_urls": 0, "failed_pages": 0}
+    metadata_stats: Dict[str, int] = {"total": 0, "ok": 0, "failed": 0}
+    max_entries = int(options.max_entries_per_search_page or youtube_cfg.get("max_entries_per_search_page") or 80)
+
     if options.offline_candidates_path:
-        found_rows = _read_rows(Path(options.offline_candidates_path))
+        collected_rows = _read_rows(Path(options.offline_candidates_path))
+        collect_stats = {"search_pages": 0, "entries_seen": len(collected_rows), "video_urls": len(collected_rows), "failed_pages": 0}
+        metadata_rows = collected_rows
+        metadata_stats = {"total": len(collected_rows), "ok": len(collected_rows), "failed": 0}
         warnings.append(f"离线模式：使用示例候选数据 {options.offline_candidates_path}")
-    elif not openrouter_api_key():
-        errors.append("未检测到 OPENROUTER_API_KEY。当前版本只支持 OpenRouter Web Search 寻源。")
+    elif missing_ytdlp:
+        metadata_rows = []
+    elif not search_urls:
+        metadata_rows = []
+        errors.append("没有提供 YouTube 搜索结果页 URL。")
     else:
-        try:
-            found_rows, scout_warnings, search_meta = scout_urls_with_openrouter(
-                user_request,
-                target_count=(options.max_results_per_query or None),
-            )
-            warnings.extend(scout_warnings)
-        except OpenRouterError as exc:
-            errors.append(str(exc))
-        except Exception as exc:
-            errors.append(f"OpenRouter Web Search 寻源失败：{type(exc).__name__}: {exc}")
-
-    found_rows = [coerce_candidate(r) for r in found_rows]
-    raw_responses = search_meta.pop("raw_responses", []) if isinstance(search_meta.get("raw_responses"), list) else []
-    if raw_responses:
-        raw_lines: List[str] = []
-        for item in raw_responses:
-            if not isinstance(item, dict):
-                continue
-            raw_lines.append(f"## {item.get('mode') or 'response'}")
-            raw_lines.append("")
-            raw_lines.append(str(item.get("raw") or ""))
-            raw_lines.append("")
-        paths["web_search_raw"].write_text(clean_text("\n".join(raw_lines)), encoding="utf-8")
-    found_rows, non_vimeo_dropped = _keep_vimeo_only(found_rows)
-    if non_vimeo_dropped:
-        warnings.append(f"已丢弃 {non_vimeo_dropped} 条非 Vimeo URL。当前版本只保留 vimeo.com 视频页。")
-    vimeo_cfg = app_config.get("vimeo") if isinstance(app_config.get("vimeo"), dict) else {}
-    oembed_stats: Dict[str, int] = {"total": len(found_rows), "ok": 0, "failed": 0, "skipped": len(found_rows)}
-    if options.use_network and not options.offline_candidates_path and vimeo_cfg.get("use_oembed_metadata", True):
-        found_rows, oembed_stats, oembed_warnings = enrich_vimeo_oembed_rows(
-            found_rows,
-            enabled=True,
-            timeout_seconds=int(vimeo_cfg.get("oembed_timeout_seconds") or 10),
+        collected_rows, collect_warnings, collect_stats = collect_search_page_urls(
+            search_urls,
+            youtube_cfg=youtube_cfg,
+            max_entries_per_page=max_entries,
         )
-        if oembed_warnings:
-            warnings.extend(oembed_warnings[:10])
-            if len(oembed_warnings) > 10:
-                warnings.append(f"还有 {len(oembed_warnings) - 10} 条 Vimeo oEmbed 读取失败已省略显示。")
-    write_jsonl(paths["llm_found_urls"], found_rows)
+        warnings.extend(collect_warnings)
+        metadata_rows, metadata_warnings, metadata_stats = enrich_video_metadata(collected_rows, youtube_cfg=youtube_cfg)
+        warnings.extend(metadata_warnings[:20])
+        if len(metadata_warnings) > 20:
+            warnings.append(f"还有 {len(metadata_warnings) - 20} 条元数据读取失败已省略显示。")
+        if metadata_stats.get("failed", 0) and not youtube_cfg.get("cookies_enabled", False):
+            warnings.append("如果失败原因包含 not a bot / Sign in，可在控制台启用 Chrome Cookie 或 cookies.txt 后重试。")
 
-    constrained_rows, hard_rejected_rows, hard_stats = apply_hard_constraints(
-        found_rows,
-        hard_constraints,
-    )
+    collected_rows = [coerce_candidate(r) for r in collected_rows]
+    metadata_rows = [coerce_candidate(r) for r in metadata_rows]
+    write_jsonl(paths["collected_urls"], collected_rows)
+
+    constrained_rows, hard_rejected_rows, hard_stats = apply_hard_constraints(metadata_rows, filters)
     if hard_rejected_rows:
         warnings.append(
             "已按硬性条件丢弃 "
-            f"{len(hard_rejected_rows)} 条：必须 Vimeo、4K/2160p/UHD、60 秒以内、发布时间两年内，且有广告/商业片特征。"
+            f"{len(hard_rejected_rows)} 条：必须 4K/2160p、{filters.get('max_duration_seconds', 60)} 秒以内、"
+            f"发布时间 {filters.get('published_within_days', 730)} 天内，且标题/描述不含负面词。"
         )
 
     unique_rows, duplicate_rows, dedupe_stats = dedupe_records(constrained_rows, exclude_task_dir=task_dir)
@@ -179,9 +135,8 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         offline=True,
     )
     write_jsonl(paths["url_analysis"], analysis_rows)
-
     write_jsonl(paths["rule_filtered"], analysis_rows)
-    write_jsonl(paths["llm_filtered"], analysis_rows)
+    write_jsonl(paths["filtered"], analysis_rows)
     write_jsonl(paths["rejected"], [*hard_rejected_rows, *duplicate_rows])
     write_jsonl(paths["final_candidates"], analysis_rows)
 
@@ -191,24 +146,22 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         output_md=paths["review_sheet_md"],
     )
 
-    metadata_success = sum(1 for r in analysis_rows if r.get("title") or r.get("video_url"))
     summary = {
         "task_id": task_id,
         "created_at": created_at,
-        "user_request": user_request.strip(),
-        "search_plan_path": str(paths["search_plan"]),
-        "web_search_raw_path": str(paths["web_search_raw"]) if paths["web_search_raw"].exists() else "",
-        "llm_found_urls_path": str(paths["llm_found_urls"]),
-        "total_candidates": len(found_rows),
-        "metadata_success_count": metadata_success,
-        "rule_pass_count": len(unique_rows),
-        "llm_pass_count": len(unique_rows),
-        "final_count": len(unique_rows),
-        "duplicate_count": len(duplicate_rows),
-        "non_vimeo_dropped": non_vimeo_dropped,
+        "user_request": user_request,
+        "search_page_count": len(search_urls),
+        "search_pages_path": str(paths["search_pages"]),
+        "collected_urls_path": str(paths["collected_urls"]),
+        "collected_url_count": len(collected_rows),
+        "collection_stats": collect_stats,
+        "metadata_stats": metadata_stats,
+        "metadata_success_count": metadata_stats.get("ok", 0),
         "hard_constraint_rejected_count": len(hard_rejected_rows),
         "hard_constraint_reject_stats": hard_stats,
-        "vimeo_oembed": oembed_stats,
+        "rule_pass_count": len(unique_rows),
+        "final_count": len(unique_rows),
+        "duplicate_count": len(duplicate_rows),
         "rejected_count": len(hard_rejected_rows) + len(duplicate_rows),
         "review_sheet_csv": str(paths["review_sheet_csv"]),
         "review_sheet_md": str(paths["review_sheet_md"]),
@@ -216,12 +169,11 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         "rejected_path": str(paths["rejected"]),
         "duplicates_path": str(paths["duplicates"]),
         "dedupe_report_path": str(paths["dedupe_report"]),
-        "web_search": search_meta,
         "errors": errors,
         "warnings": warnings,
         "next_steps": [
-            "请打开 review_sheet.csv，填写 manual_status、manual_reject_reasons、manual_notes。",
-            "填写后回到控制台选择“导入人工审核反馈”。",
+            "请打开 review_sheet.csv，人工查看候选视频。",
+            "填写 manual_status、manual_reject_reasons、manual_notes 后，可回到控制台导入反馈。",
         ],
     }
     _write_summary(paths, summary)
@@ -229,9 +181,8 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
     return PipelineResult(task_id=task_id, task_dir=task_dir, summary=summary, warnings=warnings, errors=errors)
 
 
-def import_feedback_for_task(task_dir: Path, review_csv: Path, *, use_ai: bool = True) -> Dict[str, Any]:
+def import_feedback_for_task(task_dir: Path, review_csv: Path) -> Dict[str, Any]:
     paths = task_paths(task_dir)
-    warnings: List[str] = []
     rows, import_summary = review_schema.import_manual_reviews(
         analysis_path=paths["url_analysis"],
         review_csv_path=review_csv,
@@ -243,41 +194,19 @@ def import_feedback_for_task(task_dir: Path, review_csv: Path, *, use_ai: bool =
         output_md=paths["feedback_md"],
         output_json=paths["feedback_json"],
     )
-    _md, rule_plan = search_strategy_from_feedback.generate_rule_based_strategy(
+    search_strategy_from_feedback.generate_rule_based_strategy(
         feedback_json_path=paths["feedback_json"],
         reviewed_jsonl_path=paths["manual_reviewed"],
         output_md=task_dir / "rule_based_feedback_strategy.md",
         output_yaml=paths["next_search_plan"],
     )
-
-    if use_ai and openrouter_api_key():
-        examples = []
-        for row in rows[:80]:
-            manual = row.get("manual_review") if isinstance(row.get("manual_review"), dict) else {}
-            examples.append(
-                {
-                    "video_id": row.get("video_id"),
-                    "title": row.get("title"),
-                    "channel_title": row.get("channel_title"),
-                    "query_used": (row.get("source_context") or {}).get("query_used") if isinstance(row.get("source_context"), dict) else "",
-                    "manual_review": manual,
-                }
-            )
-        md, plan, ai_warnings = analyze_feedback_with_openrouter(stats, examples)
-        warnings.extend(ai_warnings)
-        if md:
-            paths["feedback_md"].write_text(md if md.endswith("\n") else md + "\n", encoding="utf-8")
-        if plan:
-            _write_yaml(paths["next_search_plan"], plan)
-    elif use_ai:
-        warnings.append("未检测到 OPENROUTER_API_KEY，反馈策略使用基础统计。")
-
     result = {
         "import_summary": import_summary,
         "feedback_summary": stats.get("summary") or {},
         "next_search_plan": str(paths["next_search_plan"]),
         "feedback_md": str(paths["feedback_md"]),
-        "warnings": warnings,
+        "warnings": [],
+        "reviewed_rows": len(rows),
     }
     (task_dir / "feedback_import_summary.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return result

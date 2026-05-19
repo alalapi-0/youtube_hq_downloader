@@ -1,3 +1,0 @@
-video_id,title,channel_title,brand,duration_seconds,canonical_url,filter_score,probe_confirmed_4k,format_probe_status,available_format_heights,resolution_text_evidence_4k,needs_resolution_check,visual_quality_risk,llm_status,llm_relevant,llm_brand_fit,llm_notes,manual_review_priority,manual_review_status,category,subcategory,matched_keywords
-dQw4w9WgXcQ,Rick Astley cinematic commercial 2160p,Rick Astley,,212,https://www.youtube.com/watch?v=dQw4w9WgXcQ,2.5,False,skipped,,True,False,low,pending,,,,medium,pending,campaigns,product,4k
-9bZkp7q19f0,Gangnam flagship commercial teaser,motor official trailer channel,,252,https://www.youtube.com/watch?v=9bZkp7q19f0,5.0,False,skipped,,False,False,low,pending,,,,medium,pending,campaigns,product,flagship

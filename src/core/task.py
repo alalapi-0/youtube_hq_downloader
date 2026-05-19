@@ -7,11 +7,11 @@ from typing import Any, Dict, List
 
 @dataclass
 class PipelineOptions:
-    ai_enabled: bool = True
+    search_page_urls: List[str] = field(default_factory=list)
     use_network: bool = True
     offline_candidates_path: Path | None = None
     task_id: str | None = None
-    max_results_per_query: int | None = None
+    max_entries_per_search_page: int | None = None
 
 
 @dataclass

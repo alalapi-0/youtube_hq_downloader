@@ -19,7 +19,7 @@ __pycache__/
 downloads/
 state/
 
-# LLM / pipeline cache (keep directory via .gitkeep)
+# Runtime / pipeline cache (keep directory via .gitkeep)
 cache/*.json
 cache/
 !cache/

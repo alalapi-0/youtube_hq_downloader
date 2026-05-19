@@ -173,8 +173,8 @@ def build_rule_based_plan(stats: Dict[str, Any], reviewed_records: List[Dict[str
 
     plan = {
         "project": {"name": "ad-url-scout-feedback-strategy"},
-        "mode": "openrouter_web_search_only",
-        "web_search": {"target_url_count": 20 if sample_small else 40},
+        "mode": "youtube_search_page_manual",
+        "youtube": {"suggested_search_pages": 20 if sample_small else 40},
         "query_guidance": {
             "include_keywords": keywords[:40],
             "include_brands": brands[:30],
@@ -230,7 +230,7 @@ def render_rule_based_strategy_markdown(stats: Dict[str, Any], plan: Dict[str, A
             "",
             "## 规则建议",
             f"- prefer_4k_language: `{guidance.get('prefer_4k_language')}`",
-            f"- target_url_count: `{(plan.get('web_search') or {}).get('target_url_count')}`",
+            f"- suggested_search_pages: `{(plan.get('youtube') or {}).get('suggested_search_pages')}`",
             "",
             "## 依据来自哪些统计结果",
             "- `by_query_used` high/low pass rate",

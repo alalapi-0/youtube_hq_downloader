@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Dict
 
-from ..env_loader import load_dotenv
 from ..utils import PROJECT_ROOT, load_yaml_mapping
 
 
@@ -12,91 +10,25 @@ APP_CONFIG_PATH = PROJECT_ROOT / "config" / "app.yaml"
 LABELS_CONFIG_PATH = PROJECT_ROOT / "config" / "labels.yaml"
 
 
-def load_env() -> None:
-    load_dotenv(PROJECT_ROOT / ".env")
-
-
 def load_app_config(path: Path | str = APP_CONFIG_PATH) -> Dict[str, Any]:
     data = load_yaml_mapping(path) if Path(path).exists() else {}
     data.setdefault("app", {})
-    data.setdefault("llm", {})
-    data.setdefault("web_search", {})
+    data.setdefault("youtube", {})
+    data.setdefault("filters", {})
     data.setdefault("tasks", {})
     data.setdefault("review", {})
-    data.setdefault("advanced", {})
     return data
 
 
-def _usable_key(value: str) -> str:
-    key = value.strip()
-    if not key or "your_" in key or "optional_" in key:
-        return ""
-    return key
-
-
-def openrouter_api_key() -> str:
-    load_env()
-    env_name = str((load_app_config().get("llm") or {}).get("api_key_env") or "OPENROUTER_API_KEY")
-    return _usable_key(os.environ.get(env_name, ""))
-
-
-def openrouter_config() -> Dict[str, Any]:
-    cfg = load_app_config()
-    llm = dict(cfg.get("llm") or {})
-    llm.setdefault("provider", "openrouter")
-    llm.setdefault("model", "google/gemini-2.5-flash")
-    llm.setdefault("base_url", "https://openrouter.ai/api/v1")
-    llm.setdefault("api_key_env", "OPENROUTER_API_KEY")
-    llm.setdefault("temperature", 0.2)
-    llm.setdefault("max_output_tokens", 4096)
-    llm.setdefault("cache_enabled", True)
-    llm.setdefault("cache_dir", "cache/llm")
-    llm.setdefault("prompt_version", "ad-url-scout-v1")
-    llm.setdefault("max_items_per_batch", 20)
-    return llm
-
-
-def ai_enabled_by_default() -> bool:
-    cfg = load_app_config()
-    return bool((cfg.get("llm") or {}).get("enabled", True))
-
-
-def llm_compat_config() -> Dict[str, Any]:
-    llm = openrouter_config()
-    return {
-        "provider": "openrouter",
-        "model": llm["model"],
-        "temperature": llm["temperature"],
-        "max_output_tokens": llm["max_output_tokens"],
-        "env": {
-            "openrouter_api_key": llm.get("api_key_env", "OPENROUTER_API_KEY"),
-            "openrouter_base_url": "OPENROUTER_BASE_URL",
-        },
-        "defaults": {"openrouter_base_url": llm.get("base_url", "https://openrouter.ai/api/v1")},
-        "cache": {
-            "directory": llm.get("cache_dir", "cache/llm"),
-            "prompt_version": llm.get("prompt_version", "ad-url-scout-v1"),
-        },
-    }
-
-
 def url_analysis_compat_config() -> Dict[str, Any]:
-    app = load_app_config()
-    review = app.get("review") or {}
+    review = load_app_config().get("review") or {}
     return {
         "url_analysis": {
-            "use_webpage_metadata": False,
             "max_description_chars": 1500,
             "include_thumbnails": True,
             "include_tags": True,
-            "include_format_info": False,
+            "include_format_info": True,
             "skip_unavailable": False,
-        },
-        "review_export": {
-            "output_csv": "output/review/review_sheet.csv",
-            "output_md": "output/review/review_sheet.md",
-            "include_llm_reason": True,
-            "include_quality_score": True,
         },
         "feedback_analysis": {
             "min_sample_size_for_strategy": int(review.get("min_sample_size_for_strategy") or 20),
@@ -110,7 +42,7 @@ def url_analysis_compat_config() -> Dict[str, Any]:
 def product_status() -> Dict[str, Any]:
     cfg = load_app_config()
     return {
-        "openrouter_configured": bool(openrouter_api_key()),
-        "web_search": cfg.get("web_search") or {},
         "app": cfg.get("app") or {},
+        "youtube": cfg.get("youtube") or {},
+        "filters": cfg.get("filters") or {},
     }

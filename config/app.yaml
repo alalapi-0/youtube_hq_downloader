@@ -1,33 +1,17 @@
 app:
   name: ad-url-scout
   title: Ad URL Scout
-  description: OpenRouter Web Search 广告视频 URL 寻源工具
-  mode: web_search_only
+  description: YouTube 搜索结果页 URL 采集与 4K 筛选工具
   language: zh
-llm:
-  enabled: true
-  model: x-ai/grok-4.3
-  api_key_env: OPENROUTER_API_KEY
-  base_url: https://openrouter.ai/api/v1
-  temperature: 0.2
-  max_output_tokens: 4096
-  cache_enabled: true
-  cache_dir: cache/llm
-  prompt_version: ad-url-scout-v1
-  max_items_per_batch: 20
-web_search:
-  enabled: true
-  engine: parallel
-  allowed_domains:
-  - vimeo.com
-  max_results: 10
-  max_total_results: 80
-  max_total_results_cap: 120
-  search_context_size: medium
-  target_url_count: 80
-  max_output_tokens: 6000
-  relaxed_fallback: true
-hard_constraints:
+
+youtube:
+  max_entries_per_search_page: 80
+  metadata_timeout_seconds: 90
+  cookies_enabled: false
+  cookie_file: ""
+  cookies_from_browser: ""
+
+filters:
   require_4k: true
   min_height: 2160
   max_duration_seconds: 60
@@ -35,45 +19,34 @@ hard_constraints:
   reject_if_missing_4k_evidence: true
   reject_if_missing_duration: true
   reject_if_missing_publish_date: true
-  require_commercial_feature: true
-  reject_if_missing_commercial_feature: true
-  commercial_feature_terms:
-  - this video contains an advertisement
-  - advertisement
-  - commercial
-  - campaign
-  - brand film
-  - product film
-  - hero film
-  - "agency:"
-  - creative director
-  - art director
-  - agency producer
-  - "production company:"
-  - "director:"
-  - "producer:"
-  - dop
-  - "dp:"
-  - "editor:"
-  - colorist
-  - "post:"
-  - vfx
-  - packshot
-  - still life
-  - hero product
-vimeo:
-  use_oembed_metadata: true
-  oembed_timeout_seconds: 10
+  negative_keywords:
+    - ai generated
+    - ai-generated
+    - artificial intelligence
+    - review
+    - unboxing
+    - vlog
+    - behind the scenes
+    - bts
+    - compilation
+    - showreel
+    - reel
+    - reupload
+    - fanmade
+    - full show
+    - full film
+    - interview
+    - tutorial
+    - reaction
+    - news
+
 tasks:
   output_root: output/tasks
-  default_category: campaigns
-  default_subcategory: product
   review_sheet_name: review_sheet.csv
   markdown_review_name: review_sheet.md
-  offline_mode: false
+
 review:
   min_sample_size_for_strategy: 20
   high_pass_rate_threshold: 0.4
   low_pass_rate_threshold: 0.1
   min_count_for_keyword_stats: 3
-advanced: {}

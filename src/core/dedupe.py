@@ -1,25 +1,19 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
-from urllib.parse import urlparse
 
-from ..utils import read_jsonl
+from ..utils import extract_video_id, read_jsonl
 from .paths import output_root
-
-
-VIMEO_ID_PATTERN = re.compile(r"vimeo\.com/(?:[^/\s]+/)*(\d{6,})", re.I)
 
 
 def canonical_url_key(url: str) -> str:
     raw = str(url or "").strip()
     if not raw:
         return ""
-    parsed = urlparse(raw)
-    m = VIMEO_ID_PATTERN.search(raw)
-    if m:
-        return f"vimeo:{m.group(1)}"
+    video_id = extract_video_id(raw)
+    if video_id:
+        return f"youtube:{video_id}"
     cleaned = raw.split("#", 1)[0].rstrip("/")
     return cleaned.lower()
 
@@ -36,7 +30,7 @@ def prior_url_keys(*, exclude_task_dir: Path | None = None) -> set[str]:
     for task in root.glob("task_*"):
         if exclude_task_dir and task.resolve() == exclude_task_dir.resolve():
             continue
-        for name in ("final_candidates.jsonl", "candidates_raw.jsonl", "llm_found_urls.jsonl"):
+        for name in ("final_candidates.jsonl", "candidates_raw.jsonl", "collected_urls.jsonl"):
             path = task / name
             if not path.exists():
                 continue
