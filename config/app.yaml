@@ -20,11 +20,13 @@ web_search:
   engine: parallel
   allowed_domains:
   - vimeo.com
-  max_results: 8
-  max_total_results: 40
+  max_results: 10
+  max_total_results: 80
+  max_total_results_cap: 120
   search_context_size: medium
-  target_url_count: 40
+  target_url_count: 80
   max_output_tokens: 6000
+  relaxed_fallback: true
 hard_constraints:
   require_4k: true
   min_height: 2160
@@ -43,18 +45,18 @@ hard_constraints:
   - brand film
   - product film
   - hero film
-  - agency:
+  - "agency:"
   - creative director
   - art director
   - agency producer
-  - production company:
-  - director:
-  - producer:
+  - "production company:"
+  - "director:"
+  - "producer:"
   - dop
-  - dp:
-  - editor:
+  - "dp:"
+  - "editor:"
   - colorist
-  - post:
+  - "post:"
   - vfx
   - packshot
   - still life

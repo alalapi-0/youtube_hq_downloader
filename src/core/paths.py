@@ -53,6 +53,7 @@ def task_paths(task_dir: Path) -> dict[str, Path]:
     return {
         "user_request": task_dir / "user_request.txt",
         "search_plan": task_dir / "search_plan.yaml",
+        "web_search_raw": task_dir / "web_search_raw.txt",
         "llm_found_urls": task_dir / "llm_found_urls.jsonl",
         "candidates_raw": task_dir / "candidates_raw.jsonl",
         "duplicates": task_dir / "duplicates.jsonl",

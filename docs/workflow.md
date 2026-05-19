@@ -18,6 +18,8 @@
 
 系统不下载视频文件，也不再使用本地脚本或 yt-dlp 作为搜索兜底。搜索 URL 的唯一在线能力来自 OpenRouter Web Search，且当前只允许 `vimeo.com` 视频页进入结果。搜索完成后会尝试读取 Vimeo 公开 oEmbed 元数据，这一步不需要 Cookie 或 API Key，也不消耗 OpenRouter token。
 
+如果严格搜索没有返回 URL，系统会自动进行一次“宽松 Vimeo 发现模式”重试：先找可能是广告、campaign、product film 的 Vimeo 视频页，再交给本地硬性条件过滤。这样不会因为搜索摘要缺少时长/发布日期/4K 字段就直接得到 0 条。
+
 ## 硬性条件
 
 候选 URL 进入人工审核表前会经过硬闸门：
@@ -40,6 +42,8 @@
 - `duplicates.jsonl`
 
 `llm_found_urls.jsonl` 是大模型搜索返回的原始 URL 列表，`candidates_raw.jsonl` 是本地查重后的候选，`final_candidates.jsonl` 是导出审核表时使用的结构化记录。
+
+`web_search_raw.txt` 会保存 OpenRouter Web Search 的原始文本回复，方便排查“没有 URL”到底是模型没搜到、返回格式不对，还是后续过滤太严。
 
 ## 没有 OpenRouter Key
 

@@ -60,6 +60,7 @@ def _summary_markdown(summary: Dict[str, Any]) -> str:
         f"- 人工审核表：`{summary['review_sheet_csv']}`",
         f"- Markdown 预览：`{summary['review_sheet_md']}`",
         f"- AI 找到的原始 URL：`{summary.get('llm_found_urls_path', '')}`",
+        f"- Web Search 原始回复：`{summary.get('web_search_raw_path', '')}`",
         f"- 结构化数据：`{summary['final_candidates_path']}`",
         f"- 重复 URL：`{summary.get('duplicates_path', '')}`",
         "",
@@ -129,6 +130,17 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
             errors.append(f"OpenRouter Web Search 寻源失败：{type(exc).__name__}: {exc}")
 
     found_rows = [coerce_candidate(r) for r in found_rows]
+    raw_responses = search_meta.pop("raw_responses", []) if isinstance(search_meta.get("raw_responses"), list) else []
+    if raw_responses:
+        raw_lines: List[str] = []
+        for item in raw_responses:
+            if not isinstance(item, dict):
+                continue
+            raw_lines.append(f"## {item.get('mode') or 'response'}")
+            raw_lines.append("")
+            raw_lines.append(str(item.get("raw") or ""))
+            raw_lines.append("")
+        paths["web_search_raw"].write_text(clean_text("\n".join(raw_lines)), encoding="utf-8")
     found_rows, non_vimeo_dropped = _keep_vimeo_only(found_rows)
     if non_vimeo_dropped:
         warnings.append(f"已丢弃 {non_vimeo_dropped} 条非 Vimeo URL。当前版本只保留 vimeo.com 视频页。")
@@ -185,6 +197,7 @@ def run_new_task(user_request: str, options: PipelineOptions | None = None) -> P
         "created_at": created_at,
         "user_request": user_request.strip(),
         "search_plan_path": str(paths["search_plan"]),
+        "web_search_raw_path": str(paths["web_search_raw"]) if paths["web_search_raw"].exists() else "",
         "llm_found_urls_path": str(paths["llm_found_urls"]),
         "total_candidates": len(found_rows),
         "metadata_success_count": metadata_success,

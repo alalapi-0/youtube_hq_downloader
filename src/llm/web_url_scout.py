@@ -13,6 +13,10 @@ from .openrouter_client import OpenRouterClient, OpenRouterError
 
 
 VIMEO_VIDEO_URL_RE = re.compile(r"^https?://(?:www\.)?vimeo\.com/(?:[^/?#]+/)*\d{6,}(?:[?#].*)?$", re.I)
+VIMEO_VIDEO_URL_IN_TEXT_RE = re.compile(
+    r"https?://(?:www\.)?vimeo\.com/(?:[^/?#\s<>\]\)\}]+/)*\d{6,}(?:[?#][^\s<>\]\)\}]*)?",
+    re.I,
+)
 VIMEO_ALLOWED_DOMAINS = ["vimeo.com"]
 
 
@@ -46,7 +50,10 @@ def _parse_candidates(raw: str) -> List[Dict[str, Any]]:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        data = yaml.safe_load(text)
+        try:
+            data = yaml.safe_load(text)
+        except Exception:
+            data = []
     if isinstance(data, dict):
         items = data.get("candidates") or data.get("urls") or []
     elif isinstance(data, list):
@@ -103,7 +110,65 @@ def _parse_candidates(raw: str) -> List[Dict[str, Any]]:
                 "contains_advertisement": _as_bool(item.get("contains_advertisement") or item.get("is_advertisement")),
             }
         )
+    if rows:
+        return rows
+    return _parse_vimeo_urls_from_text(text)
+
+
+def _parse_vimeo_urls_from_text(text: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for match in VIMEO_VIDEO_URL_IN_TEXT_RE.finditer(text):
+        url = match.group(0).rstrip(".,;:!?\"'")
+        canonical = url.split("#", 1)[0]
+        if canonical in seen or not is_vimeo_video_url(canonical):
+            continue
+        seen.add(canonical)
+        start = max(0, match.start() - 320)
+        end = min(len(text), match.end() + 320)
+        context = clean_text(text[start:end])
+        rows.append(
+            {
+                "source_platform": "vimeo",
+                "canonical_url": canonical,
+                "video_url": canonical,
+                "title": "",
+                "description": context,
+                "description_snippet": context[:240],
+                "channel_title": "",
+                "brand": "",
+                "category": "campaigns",
+                "subcategory": "product",
+                "matched_keywords": [],
+                "query_used": "",
+                "llm_status": "web_search_found_raw_text",
+                "llm_relevant": True,
+                "llm_notes": context,
+                "confidence": None,
+            }
+        )
     return rows
+
+
+def _messages_for_prompt(prompt: Dict[str, Any], *, relaxed: bool = False) -> List[Dict[str, str]]:
+    mode_hint = (
+        "Use relaxed discovery if exact 4K/duration/date evidence is not present in snippets; return likely Vimeo ad URLs and evidence you can see."
+        if relaxed
+        else "Every returned candidate should include direct evidence for the requested hard constraints when possible."
+    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are an advertising video URL scout. You must use the web_search tool to find real Vimeo video URLs. "
+                "Return ONLY JSON, no markdown, no commentary. Never fabricate URLs. "
+                "YouTube and all non-Vimeo URLs are forbidden. "
+                "Prefer compact JSON with candidates. "
+                + mode_hint
+            ),
+        },
+        {"role": "user", "content": "WEB_URL_SCOUT_REQUEST:\n```yaml\n" + yaml.safe_dump(prompt, allow_unicode=True, sort_keys=False) + "\n```"},
+    ]
 
 
 def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = None) -> Tuple[List[Dict[str, Any]], List[str], Dict[str, Any]]:
@@ -112,6 +177,10 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
     target = int(target_count or web_cfg.get("target_url_count") or 40)
     max_results = int(web_cfg.get("max_results") or 8)
     max_total = int(web_cfg.get("max_total_results") or 40)
+    max_total_cap = int(web_cfg.get("max_total_results_cap") or 120)
+    if target_count:
+        max_total = max(max_total, min(target, max_total_cap))
+        max_results = min(25, max(max_results, 10))
     engine = str(web_cfg.get("engine") or "parallel")
     allowed_domains = VIMEO_ALLOWED_DOMAINS
 
@@ -126,9 +195,9 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
         "allowed_domains": allowed_domains,
         "hard_constraints": {
             "platform": "vimeo.com only",
-            "resolution": "must be explicitly 4K / 2160p / UHD; discard if only 720p/1080p/HD or unknown",
-            "duration": "must be 60 seconds or shorter; discard if duration is unknown or longer",
-            "published_at": "must be within the last 2 years; discard if publish/upload date is unknown or older",
+            "resolution": "prefer explicit 4K / 2160p / UHD evidence; local verifier will reject candidates without evidence",
+            "duration": "prefer 60 seconds or shorter; Vimeo oEmbed/local verifier will reject long or unknown duration",
+            "published_at": "prefer within the last 2 years; Vimeo oEmbed/local verifier will reject old or unknown dates",
             "commercial_feature": (
                 "must have explicit advertisement/campaign/commercial/product-film evidence, or production credits "
                 "such as Agency, Creative Director, Art Director, Director, Production Company, DOP, Editor, Colorist, Post, or VFX"
@@ -145,9 +214,9 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
             "Use web search. Do not invent URLs.",
             "Return only real Vimeo video page URLs from vimeo.com.",
             "Never return YouTube, youtu.be, Shorts, playlist, channel, search, Google, or non-Vimeo URLs.",
-            "Only include candidates with evidence that the page/video is 4K, 60 seconds or shorter, and published/uploaded within the last 2 years.",
+            "Prefer candidates with evidence that the page/video is 4K, 60 seconds or shorter, and published/uploaded within the last 2 years.",
             "Only include candidates with commercial advertising evidence: advertisement badge, campaign/commercial/product film wording, or production-credit metadata.",
-            "If any of resolution, duration, publish date, or commercial feature evidence cannot be verified from search/page evidence, do not include that URL.",
+            "If resolution, duration, or publish date is missing from the search snippet but the URL is clearly a Vimeo advertisement/campaign/product film, include it; local verification will decide.",
             "Prefer official brand ads, campaign films, product films, fragrance films, jewelry/watch films, luxury commercials.",
             "Strong positive page-text signals include: Agency:, Creative Director, Art Director, Director:, Production Company:, DOP, Editor:, Colorist, Post:, VFX, Fall/Spring/Summer campaign.",
             "Avoid reviews, unboxing, vlogs, AI generated content, compilations, reels/showreels unless the result page is the actual ad video.",
@@ -171,19 +240,6 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
             "confidence": "0-1 if inferable",
         },
     }
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an advertising video URL scout. Use web search to find real Vimeo video URLs. "
-                "Return ONLY JSON, no markdown, no commentary. Never fabricate URLs. "
-                "YouTube and all non-Vimeo URLs are forbidden. "
-                "Every candidate must satisfy hard constraints: Vimeo only, explicit 4K/2160p/UHD evidence, "
-                "duration <= 60 seconds, published within the last 2 years, and explicit commercial advertising evidence."
-            ),
-        },
-        {"role": "user", "content": "WEB_URL_SCOUT_REQUEST:\n```yaml\n" + yaml.safe_dump(prompt, allow_unicode=True, sort_keys=False) + "\n```"},
-    ]
     tools = [
         {
             "type": "openrouter:web_search",
@@ -196,9 +252,32 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
             },
         }
     ]
-    raw = client.chat(messages, tools=tools, temperature=0.1, max_tokens=int(web_cfg.get("max_output_tokens") or 6000))
+    raw_responses: List[Dict[str, str]] = []
+    raw = client.chat(_messages_for_prompt(prompt), tools=tools, temperature=0.1, max_tokens=int(web_cfg.get("max_output_tokens") or 6000))
+    raw_responses.append({"mode": "strict", "raw": raw})
     rows = _parse_candidates(raw)
     warnings: List[str] = []
+    if not rows and web_cfg.get("relaxed_fallback", True):
+        warnings.append("严格搜索没有返回可解析 Vimeo URL，已自动改用宽松 Vimeo 发现模式重试。")
+        relaxed_prompt = dict(prompt)
+        relaxed_prompt["mode"] = "relaxed_vimeo_discovery"
+        relaxed_prompt["rules"] = [
+            "Use web search. Do not invent URLs.",
+            "Return only real Vimeo video page URLs from vimeo.com.",
+            "Never return YouTube, youtu.be, Shorts, playlist, channel, search, Google, or non-Vimeo URLs.",
+            "Find likely advertising/campaign/product-film Vimeo pages first; exact 4K/duration/date will be verified locally after URL discovery.",
+            "Strong positive page-text signals include: advertisement, commercial, campaign, product film, Agency:, Creative Director, Art Director, Director:, Production Company:, DOP, Editor:, Colorist, Post:, VFX.",
+            "Avoid reviews, unboxing, vlogs, AI generated content, compilations, showreels, behind the scenes, and reuploads.",
+            "Return compact JSON only with key candidates.",
+        ]
+        raw = client.chat(
+            _messages_for_prompt(relaxed_prompt, relaxed=True),
+            tools=tools,
+            temperature=0.1,
+            max_tokens=int(web_cfg.get("max_output_tokens") or 6000),
+        )
+        raw_responses.append({"mode": "relaxed", "raw": raw})
+        rows = _parse_candidates(raw)
     if not rows:
         warnings.append("OpenRouter Web Search 未返回可校验的视频 URL。")
     meta = {
@@ -207,5 +286,6 @@ def scout_urls_with_openrouter(user_request: str, *, target_count: int | None = 
         "max_total_results": max_total,
         "allowed_domains": allowed_domains,
         "raw_candidate_count": len(rows),
+        "raw_responses": raw_responses,
     }
     return rows[:target], warnings, meta

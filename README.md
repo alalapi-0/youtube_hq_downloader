@@ -48,6 +48,7 @@ OPENROUTER_API_KEY=your_openrouter_api_key_here
 output/tasks/task_YYYYMMDD_NNN/
   user_request.txt
   search_plan.yaml
+  web_search_raw.txt
   llm_found_urls.jsonl
   candidates_raw.jsonl
   duplicates.jsonl
@@ -66,6 +67,7 @@ output/tasks/task_YYYYMMDD_NNN/
 - `review_sheet.md`：快速预览
 - `run_summary.md`：本轮统计和提醒
 - `duplicates.jsonl`：本地查重剔除的 URL
+- `web_search_raw.txt`：OpenRouter 原始回复，用于排查 0 URL 或格式异常
 
 ## 高级 CLI
 

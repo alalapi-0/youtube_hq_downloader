@@ -55,7 +55,22 @@ def hard_constraints_from_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     block = cfg.get("hard_constraints") if isinstance(cfg.get("hard_constraints"), dict) else {}
     out = dict(DEFAULT_HARD_CONSTRAINTS)
     out.update(block)
+    out["commercial_feature_terms"] = _normalize_commercial_terms(out.get("commercial_feature_terms") or [])
     return out
+
+
+def _normalize_commercial_terms(values: Iterable[Any]) -> List[str]:
+    terms: List[str] = []
+    for value in values:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                text = f"{key}:" if nested is None else f"{key}: {nested}"
+                terms.append(text)
+            continue
+        text = str(value or "").strip()
+        if text:
+            terms.append(text)
+    return terms
 
 
 def _as_int(value: Any) -> int | None:

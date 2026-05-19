@@ -147,6 +147,25 @@ class OfflineSmoke(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["source_platform"], "vimeo")
 
+    def test_web_url_parser_falls_back_to_raw_vimeo_urls(self) -> None:
+        from src.llm.web_url_scout import _parse_candidates
+
+        rows = _parse_candidates(
+            "Possible candidates:\n"
+            "- https://vimeo.com/1117607677 Coach Fall 2025 Campaign, Agency credits, 4K mention.\n"
+            "- https://www.youtube.com/watch?v=AbCdEfGhIj1 forbidden.\n"
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["video_url"], "https://vimeo.com/1117607677")
+        self.assertIn("Coach", rows[0]["description"])
+
+    def test_hard_constraint_config_normalizes_yaml_colon_terms(self) -> None:
+        from src.core.hard_constraints import hard_constraints_from_config
+
+        cfg = hard_constraints_from_config({"hard_constraints": {"commercial_feature_terms": [{"agency": None}, "campaign"]}})
+        self.assertIn("agency:", cfg["commercial_feature_terms"])
+        self.assertIn("campaign", cfg["commercial_feature_terms"])
+
     def test_pipeline_drops_non_vimeo_candidates(self) -> None:
         from src.core.pipeline import run_new_task
         from src.core.task import PipelineOptions
