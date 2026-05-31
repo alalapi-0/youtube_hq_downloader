@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -151,6 +152,136 @@ class OfflineSmoke(unittest.TestCase):
         self.assertGreaterEqual(stats["negative_keyword:review"], 1)
         self.assertGreaterEqual(stats["missing_4k_evidence"], 1)
 
+    def test_custom_campaign_filters_check_duration_window_and_professional_signal(self) -> None:
+        from src.core.hard_constraints import apply_hard_constraints, hard_constraints_from_config
+
+        filters = hard_constraints_from_config({})
+        filters.update(
+            {
+                "require_4k": False,
+                "min_duration_seconds": 15,
+                "max_duration_seconds": 120,
+                "published_within_days": 1461,
+                "require_professional_campaign": True,
+            }
+        )
+        valid = {
+            "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI01",
+            "title": "Brand campaign film directed by Jane Doe",
+            "description": "Official commercial produced by Example Studio.",
+            "duration_seconds": 60,
+            "published_at": date.today().isoformat(),
+        }
+        rows = [
+            valid,
+            {**valid, "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI02", "duration_seconds": 14},
+            {**valid, "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI03", "duration_seconds": 121},
+            {
+                **valid,
+                "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI04",
+                "title": "Beautiful landscape footage",
+                "description": "Landscape footage.",
+            },
+            {
+                **valid,
+                "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI05",
+                "title": "Director campaign film vlog",
+            },
+        ]
+
+        kept, rejected, stats = apply_hard_constraints(rows, filters)
+
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(len(rejected), 4)
+        self.assertEqual(stats["duration_too_short"], 1)
+        self.assertEqual(stats["duration_too_long"], 1)
+        self.assertEqual(stats["missing_professional_campaign_signal"], 1)
+        self.assertEqual(stats["non_professional_keyword:vlog"], 1)
+
+    def test_brand_product_ad_filter_keeps_specific_client_and_drops_generic_work(self) -> None:
+        from src.core.hard_constraints import apply_hard_constraints, hard_constraints_from_config
+
+        filters = hard_constraints_from_config({})
+        filters.update(
+            {
+                "require_4k": False,
+                "require_specific_brand_product_ad": True,
+                "max_duration_seconds": 120,
+                "published_within_days": 1461,
+            }
+        )
+        valid = {
+            "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI01",
+            "title": "Faasos | Paratha Burger",
+            "description": "Client: Faasos. Product: Paratha Burger. Food stylist and production credits.",
+            "duration_seconds": 30,
+            "published_at": date.today().isoformat(),
+        }
+        rows = [
+            valid,
+            {
+                **valid,
+                "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI02",
+                "title": "Cinematic Vegetarian Pizza Commercial",
+                "description": "A food commercial lighting test with a camera robot.",
+            },
+            {
+                **valid,
+                "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI03",
+                "title": "Food & Lifestyle Video Production",
+                "description": "Restaurant and food content by a production company.",
+            },
+        ]
+
+        kept, rejected, stats = apply_hard_constraints(rows, filters)
+
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(len(rejected), 2)
+        self.assertGreaterEqual(stats["not_brand_product_ad:cinematic vegetarian pizza"], 1)
+        self.assertGreaterEqual(stats["not_brand_product_ad:content by"], 1)
+
+    def test_required_topic_keywords_filter_off_topic_results(self) -> None:
+        from src.core.hard_constraints import apply_hard_constraints, hard_constraints_from_config
+
+        filters = hard_constraints_from_config({})
+        filters.update(
+            {
+                "require_4k": False,
+                "max_duration_seconds": 120,
+                "published_within_days": 1461,
+                "required_topic_keywords": ["beer", "whiskey"],
+                "topic_negative_keywords": ["hand sanitizer"],
+            }
+        )
+        valid = {
+            "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI01",
+            "title": "Four Roses Bourbon Whiskey Commercial",
+            "description": "A brand ad for bourbon whiskey.",
+            "duration_seconds": 30,
+            "published_at": date.today().isoformat(),
+        }
+        rows = [
+            valid,
+            {
+                **valid,
+                "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI02",
+                "title": "Crystal Water Commercial",
+                "description": "A beverage ad with no alcohol topic signal.",
+            },
+            {
+                **valid,
+                "video_url": "https://www.youtube.com/watch?v=AbCdEfGhI03",
+                "title": "Hand Sanitizer Alcohol Commercial",
+            },
+        ]
+
+        kept, rejected, stats = apply_hard_constraints(rows, filters)
+
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(len(rejected), 2)
+        self.assertEqual(stats["missing_required_topic_keyword"], 1)
+        self.assertEqual(stats["topic_negative_keyword:hand sanitizer"], 1)
+
     def test_youtube_search_entry_to_candidate(self) -> None:
         from src.youtube_collect import _candidate_from_entry
 
@@ -177,6 +308,25 @@ class OfflineSmoke(unittest.TestCase):
         self.assertEqual(stats["duplicates"], 2)
         self.assertEqual(duplicates[0]["duplicate_reason"], "duplicate_in_current_task")
         self.assertEqual(duplicates[1]["duplicate_reason"], "missing_url")
+
+    def test_prior_dedupe_ignores_collected_urls_only(self) -> None:
+        from src.core.dedupe import dedupe_records
+
+        stamp = str(time.time_ns())[-9:]
+        vid = f"CoL{stamp}"[:11].ljust(11, "X")
+        task = ROOT / "output" / "tasks" / f"task_test_collected_only_{stamp}"
+        task.mkdir(parents=True, exist_ok=True)
+        try:
+            _write_jsonl(task / "collected_urls.jsonl", [{"video_url": f"https://www.youtube.com/watch?v={vid}"}])
+            unique, duplicates, _stats = dedupe_records(
+                [{"video_url": f"https://www.youtube.com/watch?v={vid}"}],
+                exclude_task_dir=ROOT / "output" / "tasks" / "not-a-real-task",
+            )
+        finally:
+            shutil.rmtree(task, ignore_errors=True)
+
+        self.assertEqual(len(unique), 1)
+        self.assertEqual(len(duplicates), 0)
 
     def test_cli_help_no_longer_exposes_removed_search_stacks(self) -> None:
         proc = subprocess.run(

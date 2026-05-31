@@ -10,8 +10,12 @@ class PipelineOptions:
     search_page_urls: List[str] = field(default_factory=list)
     use_network: bool = True
     offline_candidates_path: Path | None = None
+    extra_candidates_paths: List[Path] = field(default_factory=list)
     task_id: str | None = None
     max_entries_per_search_page: int | None = None
+    metadata_concurrency: int | None = None
+    youtube_overrides: Dict[str, Any] = field(default_factory=dict)
+    filter_overrides: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

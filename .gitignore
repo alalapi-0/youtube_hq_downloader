@@ -41,6 +41,7 @@ cache/*
 /output/_console*
 /output/tasks/*
 !/output/tasks/.gitkeep
+/output/browser_collections/*
 
 # Console / runtime logs (keep directory via .gitkeep)
 logs/*.log

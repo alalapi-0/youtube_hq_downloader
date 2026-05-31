@@ -30,7 +30,7 @@ def prior_url_keys(*, exclude_task_dir: Path | None = None) -> set[str]:
     for task in root.glob("task_*"):
         if exclude_task_dir and task.resolve() == exclude_task_dir.resolve():
             continue
-        for name in ("final_candidates.jsonl", "candidates_raw.jsonl", "collected_urls.jsonl"):
+        for name in ("final_candidates.jsonl", "candidates_raw.jsonl"):
             path = task / name
             if not path.exists():
                 continue

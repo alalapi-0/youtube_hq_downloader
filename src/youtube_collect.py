@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import shutil
 import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -10,7 +15,21 @@ from .utils import clean_text, extract_video_id, watch_url
 
 
 def ytdlp_available() -> bool:
-    return bool(shutil.which("yt-dlp"))
+    try:
+        import yt_dlp  # noqa: F401
+
+        return True
+    except Exception:
+        return bool(shutil.which("yt-dlp"))
+
+
+def _ytdlp_command_base() -> List[str]:
+    try:
+        import yt_dlp  # noqa: F401
+
+        return [sys.executable, "-m", "yt_dlp"]
+    except Exception:
+        return ["yt-dlp"]
 
 
 def _as_int(value: Any) -> int | None:
@@ -37,26 +56,52 @@ def _yt_dlp_cookie_args(youtube_cfg: Dict[str, Any]) -> List[str]:
     return []
 
 
+def _yt_dlp_rate_limit_args(youtube_cfg: Dict[str, Any]) -> List[str]:
+    args: List[str] = []
+    sleep_requests = str(youtube_cfg.get("sleep_requests_seconds") or "").strip()
+    if sleep_requests:
+        args.extend(["--sleep-requests", sleep_requests])
+    extractor_retries = str(youtube_cfg.get("extractor_retries") or "").strip()
+    if extractor_retries:
+        args.extend(["--extractor-retries", extractor_retries])
+    return args
+
+
 def _run_ytdlp_json(args: List[str], *, timeout_seconds: int) -> Tuple[Dict[str, Any] | None, str]:
-    cmd = ["yt-dlp", "--dump-single-json", "--skip-download", "--no-warnings", *args]
+    timeout = max(10, int(timeout_seconds))
+    cmd = [
+        *_ytdlp_command_base(),
+        "--ignore-config",
+        "--dump-single-json",
+        "--skip-download",
+        "--no-warnings",
+        "--remote-components",
+        "ejs:github",
+        *args,
+    ]
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=max(10, int(timeout_seconds)),
-            check=False,
+            start_new_session=True,
         )
+        stdout, stderr = proc.communicate(timeout=timeout)
     except FileNotFoundError:
         return None, "yt-dlp_not_found"
     except subprocess.TimeoutExpired:
-        return None, "yt-dlp_timeout"
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        stdout, stderr = proc.communicate()
+        return None, f"yt-dlp_timeout_{timeout}s"
     if proc.returncode != 0:
-        detail = clean_text(proc.stderr or proc.stdout).strip().splitlines()
+        detail = clean_text(stderr or stdout).strip().splitlines()
         return None, "; ".join(detail[-3:])[:500] or f"yt-dlp_exit_{proc.returncode}"
     try:
-        data = json.loads(proc.stdout)
+        data = json.loads(stdout)
     except json.JSONDecodeError as exc:
         return None, f"yt-dlp_invalid_json: {exc}"
     return data if isinstance(data, dict) else None, "ok"
@@ -119,6 +164,8 @@ def _candidate_from_entry(entry: Dict[str, Any], *, search_url: str) -> Dict[str
         "channel_title": clean_text(entry.get("channel") or entry.get("uploader") or ""),
         "source_search_url": search_url,
         "query_used": search_url,
+        "duration_seconds": _as_int(entry.get("duration")),
+        "view_count": _as_int(entry.get("view_count")),
         "collector_status": "flat_search_result",
     }
 
@@ -134,6 +181,7 @@ def collect_search_page_urls(
     stats = {"search_pages": 0, "entries_seen": 0, "video_urls": 0, "failed_pages": 0}
     timeout = int(youtube_cfg.get("metadata_timeout_seconds") or 90)
     cookie_args = _yt_dlp_cookie_args(youtube_cfg)
+    rate_limit_args = _yt_dlp_rate_limit_args(youtube_cfg)
     for search_url in search_urls:
         url = clean_text(search_url).strip()
         if not url:
@@ -144,6 +192,7 @@ def collect_search_page_urls(
             "--playlist-end",
             str(max_entries_per_page),
             *cookie_args,
+            *rate_limit_args,
             url,
         ]
         data, status = _run_ytdlp_json(args, timeout_seconds=timeout)
@@ -166,23 +215,26 @@ def enrich_video_metadata(
     rows: Iterable[Dict[str, Any]],
     *,
     youtube_cfg: Dict[str, Any],
+    concurrency: int = 1,
 ) -> Tuple[List[Dict[str, Any]], List[str], Dict[str, int]]:
+    records = list(rows)
     enriched: List[Dict[str, Any]] = []
     warnings: List[str] = []
     stats = {"total": 0, "ok": 0, "failed": 0}
     timeout = int(youtube_cfg.get("metadata_timeout_seconds") or 90)
     cookie_args = _yt_dlp_cookie_args(youtube_cfg)
-    for record in rows:
-        stats["total"] += 1
+    rate_limit_args = _yt_dlp_rate_limit_args(youtube_cfg)
+    metadata_sleep = float(youtube_cfg.get("metadata_sleep_seconds") or 0)
+
+    def enrich_one(record: Dict[str, Any]) -> Tuple[Dict[str, Any], str, bool]:
         row = dict(record)
         url = str(row.get("video_url") or row.get("canonical_url") or "").strip()
-        data, status = _run_ytdlp_json([*cookie_args, url], timeout_seconds=timeout)
+        if metadata_sleep > 0:
+            time.sleep(metadata_sleep)
+        data, status = _run_ytdlp_json([*cookie_args, *rate_limit_args, url], timeout_seconds=timeout)
         if not data:
             row["metadata_status"] = status
-            warnings.append(f"视频元数据读取失败：{url} ({status})")
-            stats["failed"] += 1
-            enriched.append(row)
-            continue
+            return row, f"视频元数据读取失败：{url} ({status})", False
         heights = _format_heights(data)
         max_height = max(heights) if heights else None
         published_at = _date_from_upload_date(data.get("upload_date")) or _date_from_timestamp(data.get("timestamp"))
@@ -211,6 +263,38 @@ def enrich_video_metadata(
                 "metadata_status": "ok",
             }
         )
-        stats["ok"] += 1
+        return row, "", True
+
+    stats["total"] = len(records)
+    if not records:
+        return enriched, warnings, stats
+
+    concurrency = max(1, int(concurrency or 1))
+    if concurrency == 1:
+        results = [enrich_one(record) for record in records]
+    else:
+        results: List[Tuple[Dict[str, Any], str, bool] | None] = [None] * len(records)
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            future_to_idx = {pool.submit(enrich_one, record): idx for idx, record in enumerate(records)}
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as exc:  # defensive: keep batch jobs moving on unexpected metadata bugs
+                    row = dict(records[idx])
+                    url = str(row.get("video_url") or row.get("canonical_url") or "").strip()
+                    row["metadata_status"] = f"metadata_exception: {exc}"
+                    results[idx] = (row, f"视频元数据读取失败：{url} (metadata_exception: {exc})", False)
+
+    for result in results:
+        if result is None:
+            continue
+        row, warning, ok = result
+        if warning:
+            warnings.append(warning)
+        if ok:
+            stats["ok"] += 1
+        else:
+            stats["failed"] += 1
         enriched.append(row)
     return enriched, warnings, stats
