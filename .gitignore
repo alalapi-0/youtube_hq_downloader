@@ -49,3 +49,19 @@ logs/
 !logs/
 logs/*
 !logs/.gitkeep
+
+# Local legacy recovery: source is opt-in; private/history inputs stay local.
+/legacy/old_downloader/*
+!/legacy/old_downloader/scripts/
+/legacy/old_downloader/scripts/*
+!/legacy/old_downloader/scripts/common.py
+!/legacy/old_downloader/scripts/probe_best_plan.py
+!/legacy/old_downloader/scripts/download_by_plan.py
+!/legacy/old_downloader/scripts/linux_verify.py
+!/legacy/old_downloader/scripts/linux_validation.py
+!/legacy/old_downloader/scripts/export_hub_metric_snapshot.py
+!/legacy/old_downloader/test_*.py
+!/legacy/old_downloader/requirements-browser.txt
+!/legacy/old_downloader/LINUX_README.md
+.hub/
+!/legacy/old_downloader/AGENTS.md

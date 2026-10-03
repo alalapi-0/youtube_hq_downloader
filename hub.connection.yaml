@@ -1,0 +1,54 @@
+schema_version: '2.0'
+project_id: youtube-hq-downloader
+source_refs:
+- id: state
+  path: PROJECT_STATUS.md
+  format: markdown
+  role: current_state
+mapping: {}
+unknown_fields:
+  current_work.objective: No typed current Ad URL Scout business/delivery field is
+    published by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  current_work.phase: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  current_work.round: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  current_work.status: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  current_work.completed: No typed current Ad URL Scout business/delivery field is
+    published by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  current_work.accepted: No typed current Ad URL Scout business/delivery field is
+    published by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  current_work.next_action: No typed current Ad URL Scout business/delivery field
+    is published by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  current_work.owner_role: No typed current Ad URL Scout business/delivery field is
+    published by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  progress.completed: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  progress.total: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  progress.counting_basis: No typed current Ad URL Scout business/delivery field is
+    published by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  progress.milestones: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  blockers: No typed current Ad URL Scout business/delivery field is published by
+    PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  verification.status: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  verification.evidence_refs: No typed current Ad URL Scout business/delivery field
+    is published by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  verification.accepted_basis: No typed current Ad URL Scout business/delivery field
+    is published by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  delivery.status: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  delivery.remote: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  delivery.branch: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  delivery.commit: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+  delivery.receipt_ref: No typed current Ad URL Scout business/delivery field is published
+    by PROJECT_STATUS.md; legacy acceptance is not current evidence.
+validation_entry:
+- python3 -I -B scripts/linux_verify.py test
+max_read_age_seconds: 604800

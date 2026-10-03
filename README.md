@@ -84,3 +84,20 @@ python3 -m src.main collect \
 - `docs/manual_review.md`
 - `docs/feedback_loop.md`
 - `docs/advanced_cli.md`
+
+## 本机 Linux 维护与早期下载器
+
+此目录已接入既有 `alalapi-0/youtube_hq_downloader`，当前源码保持上述 Ad URL Scout 流程。迁移历史见 `docs/linux_migration.md`。
+
+离线维护入口（不访问真实网站或本机账号）：
+
+```bash
+python3 -I -B scripts/linux_verify.py check
+python3 -I -B scripts/linux_verify.py test
+python3 -I -B legacy/old_downloader/scripts/linux_verify.py check
+python3 -I -B legacy/old_downloader/scripts/linux_verify.py test
+```
+
+当前应用 runtime 为 `/home/alalapi/Runtimes/youtube-hq-downloader/ad-url-scout-venv`；旧下载器保留 `/home/alalapi/Runtimes/youtube-hq-downloader/venv`。测试输出仅位于 `/home/alalapi/Temp/youtube-hq-downloader`。依赖按 `toolchains/linux/requirements.lock` 的官方 wheel 哈希安装到独立环境。
+
+原本地下载器与私有输入留在 `legacy/old_downloader`，源码独有改动未用远端旧版本替换。历史40/40属于旧版本；真实网站业务和认证仍待验证。请读取当前 AGENTS.md 和 PROJECT_STATUS.md 后维护。
